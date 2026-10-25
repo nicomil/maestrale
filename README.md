@@ -20,7 +20,7 @@ open build/DerivedData/Build/Products/Debug/MacCleaner.app
 
 # Prova delle scansioni da Terminale (sola lettura, non rimuove nulla)
 cd Packages/MacCleanerKit && swift build -c release --product mccli
-.build/release/mccli junk|trash|large|duplicates|similar|orphans|apps|updates
+.build/release/mccli junk|trash|large|duplicates|similar|orphans|apps|updates|privacy|launch|mail|installers|malware
 ```
 
 ## Sicurezza
@@ -41,5 +41,5 @@ Molte cartelle (Safari, profili dei browser, dati di altre app) sono leggibili s
 | M2: Space Lens, file grandi e vecchi, duplicati, immagini simili | fatto |
 | M3: disinstallazione, avanzi di app rimosse, aggiornamenti | fatto |
 | M4: privacy, prestazioni, operazioni da amministratore | fatto (password macOS al posto del demone, vedi `docs/spec/helper.md`) |
-| M5: malware, Mail, immagini disco | da fare |
+| M5: protezione (euristiche), allegati di Mail, installer | fatto |
 | M6: Smart Care, menu bar, pianificazione | da fare |

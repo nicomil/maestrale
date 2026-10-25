@@ -31,6 +31,8 @@ struct ContentView: View {
                 PrivacyView()
             case .performance?:
                 PerformanceView()
+            case .protection?:
+                ProtectionView()
             case nil:
                 ContentUnavailableView("Scegli una funzione", systemImage: "sparkles")
             }

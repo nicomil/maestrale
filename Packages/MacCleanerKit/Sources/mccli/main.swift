@@ -53,7 +53,17 @@ case "launch":
         print("\(item.isDisabled ? "off" : "on ") \(item.isBroken ? "ROTTO " : "")\(item.domain.rawValue): \(item.label)")
     }
     print("Manutenzione disponibile: " + MaintenanceTask.available().map(\.title).joined(separator: ", "))
+case "mail": show(try await MailAttachmentsModule().scan())
+case "installers": show(try await InstallersModule().scan())
+case "malware":
+    let scanner = MalwareScanner()
+    let status = scanner.protectionStatus()
+    print("Gatekeeper \(status.gatekeeperEnabled.map { $0 ? "on" : "OFF" } ?? "?"), SIP \(status.sipEnabled.map { $0 ? "on" : "OFF" } ?? "?"), "
+          + "firewall \(status.firewallEnabled.map { $0 ? "on" : "off" } ?? "?"), XProtect \(status.xprotectVersion ?? "?")")
+    for finding in scanner.scan() {
+        print("[\(finding.severity)] \(finding.title): \(finding.reasons.joined(separator: "; "))")
+    }
 default:
-    print("Uso: mccli junk|trash|large|duplicates|similar|orphans|apps|updates|privacy|launch")
+    print("Uso: mccli junk|trash|large|duplicates|similar|orphans|apps|updates|privacy|launch|mail|installers|malware")
 }
 print(String(format: "(%.1fs)", Date().timeIntervalSince(started)))

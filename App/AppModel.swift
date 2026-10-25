@@ -11,6 +11,7 @@ enum Destination: Hashable {
     case updates
     case privacy
     case performance
+    case protection
 }
 
 /// A sidebar group.
@@ -50,6 +51,7 @@ final class AppModel {
     let updates = UpdatesModel()
     let privacy = PrivacyModel()
     let performance = PerformanceModel()
+    let protection = ProtectionModel()
     private(set) var sections: [SidebarSection] = []
 
     init() {
@@ -60,6 +62,8 @@ final class AppModel {
         var cleanup: [SidebarEntry] = []
         if let junk = try? SystemJunkModule() { cleanup.append(add(junk, icon: "internaldrive")) }
         cleanup.append(add(TrashModule(), icon: "trash"))
+        cleanup.append(add(MailAttachmentsModule(), icon: "paperclip"))
+        cleanup.append(add(InstallersModule(), icon: "shippingbox"))
 
         let space: [SidebarEntry] = [
             SidebarEntry(destination: .spaceLens, title: "Space Lens", icon: "circle.hexagongrid"),
@@ -77,6 +81,7 @@ final class AppModel {
             SidebarSection(title: "Spazio", entries: space),
             SidebarSection(title: "Applicazioni", entries: applications),
             SidebarSection(title: "Protezione e velocità", entries: [
+                SidebarEntry(destination: .protection, title: "Protezione", icon: "shield.lefthalf.filled"),
                 SidebarEntry(destination: .privacy, title: "Privacy", icon: "hand.raised"),
                 SidebarEntry(destination: .performance, title: "Prestazioni", icon: "gauge.with.dots.needle.67percent"),
             ]),
