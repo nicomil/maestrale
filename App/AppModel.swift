@@ -9,6 +9,8 @@ enum Destination: Hashable {
     case spaceLens
     case uninstaller
     case updates
+    case privacy
+    case performance
 }
 
 /// A sidebar group.
@@ -46,6 +48,8 @@ final class AppModel {
     let spaceLens = SpaceLensModel()
     let uninstaller = UninstallerModel()
     let updates = UpdatesModel()
+    let privacy = PrivacyModel()
+    let performance = PerformanceModel()
     private(set) var sections: [SidebarSection] = []
 
     init() {
@@ -72,6 +76,10 @@ final class AppModel {
             SidebarSection(title: "Pulizia", entries: cleanup),
             SidebarSection(title: "Spazio", entries: space),
             SidebarSection(title: "Applicazioni", entries: applications),
+            SidebarSection(title: "Protezione e velocità", entries: [
+                SidebarEntry(destination: .privacy, title: "Privacy", icon: "hand.raised"),
+                SidebarEntry(destination: .performance, title: "Prestazioni", icon: "gauge.with.dots.needle.67percent"),
+            ]),
         ]
     }
 
@@ -88,6 +96,7 @@ final class AppModel {
             // Preselect only what the module marks as safe and what we can remove ourselves.
             selection.subtract(report.allItems.map(\.url))
             selection.formUnion(report.allItems.filter { $0.autoSelect && !$0.needsHelper }.map(\.url))
+            // Items needing the password stay unselected until the user picks them.
         } catch {
             modules[id]?.error = error.localizedDescription
         }
@@ -96,7 +105,7 @@ final class AppModel {
 
     func selectedItems(in id: String) -> [ScanItem] {
         guard let report = modules[id]?.report else { return [] }
-        return report.allItems.filter { selection.contains($0.url) && !$0.needsHelper }
+        return report.allItems.filter { selection.contains($0.url) }
     }
 
     func selectedSize(in id: String) -> Int64 {
@@ -113,7 +122,7 @@ final class AppModel {
     }
 
     func setCategory(_ category: ScanCategory, selected: Bool) {
-        let urls = category.items.filter { !$0.needsHelper && $0.url != category.keep }.map(\.url)
+        let urls = category.items.filter { $0.url != category.keep }.map(\.url)
         if selected { selection.formUnion(urls) } else { selection.subtract(category.items.map(\.url)) }
     }
 
@@ -124,10 +133,37 @@ final class AppModel {
         isCleaning = true
         let mode = removalMode
         let remover = SafeRemover(allowedRoots: module.allowedRoots, mode: mode)
-        let outcomes = await Task.detached { remover.remove(items.map(\.url)) }.value
-        modules[id]?.lastCleanSummary = Self.summary(outcomes, mode: mode)
+        let userItems = items.filter { !$0.needsHelper }
+        let adminItems = items.filter(\.needsHelper)
+        var outcomes = await Task.detached { remover.remove(userItems.map(\.url)) }.value
+        var adminNote = ""
+        if !adminItems.isEmpty {
+            let result = await Self.removeAsAdmin(adminItems, dryRun: mode == .dryRun)
+            outcomes += result.outcomes
+            adminNote = result.note
+        }
+        modules[id]?.lastCleanSummary = Self.summary(outcomes, mode: mode) + adminNote
         isCleaning = false
         if mode != .dryRun { await scan(id) }
+    }
+
+    /// Removes system items with one administrator password prompt.
+    /// They are deleted (not trashed): only caches and logs that the system recreates qualify.
+    static func removeAsAdmin(_ items: [ScanItem], dryRun: Bool) async -> (outcomes: [RemovalOutcome], note: String) {
+        let urls = items.map(\.url)
+        let runner = AdminRunner()
+        do {
+            if dryRun {
+                _ = try runner.command(for: .remove(urls))
+            } else {
+                try await Task.detached { try runner.run(.remove(urls)) }.value
+            }
+            return (items.map { RemovalOutcome(url: $0.url, result: .success($0.size)) }, "")
+        } catch AdminError.cancelled {
+            return ([], " · password annullata, elementi di sistema non rimossi")
+        } catch {
+            return ([], " · elementi di sistema non rimossi: \(error)")
+        }
     }
 
     static func summary(_ outcomes: [RemovalOutcome], mode: RemovalMode) -> String {

@@ -3,7 +3,7 @@ import MacCleanerCore
 import MacCleanerModules
 
 // Read-only: prints what each module finds. Usage: mccli <module>
-// Modules: junk, trash, large, duplicates, similar, orphans, apps, updates
+// Modules: junk, trash, large, duplicates, similar, orphans, apps, updates, privacy, launch
 
 func show(_ report: ScanReport, limit: Int = 8) {
     print("Totale: \(ByteCountFormatter.string(fromByteCount: report.totalSize, countStyle: .file))")
@@ -40,7 +40,20 @@ case "updates":
     let updates = await UpdateChecker().check(apps)
     print("\(updates.count) aggiornamenti su \(apps.count) app")
     for u in updates { print("\(u.app.name): \(u.app.version) → \(u.availableVersion) [\(u.source.rawValue)]") }
+case "privacy":
+    for item in PrivacyScanner().scan() {
+        print("\(item.autoSelect ? "[x]" : "[ ]") \(item.owner) \(item.profile ?? "") — \(item.kind.title): \(item.count)")
+    }
+    print("Wi-Fi salvate: \(WiFiNetworks.preferred().count)")
+    print("Non leggibili senza Accesso completo al disco: " + PrivacyScanner().unreadableOwners().joined(separator: ", "))
+case "launch":
+    let items = LaunchItemsScanner().scan()
+    print("\(items.count) elementi di avvio, \(items.filter(\.isBroken).count) rotti")
+    for item in items.prefix(25) {
+        print("\(item.isDisabled ? "off" : "on ") \(item.isBroken ? "ROTTO " : "")\(item.domain.rawValue): \(item.label)")
+    }
+    print("Manutenzione disponibile: " + MaintenanceTask.available().map(\.title).joined(separator: ", "))
 default:
-    print("Uso: mccli junk|trash|large|duplicates|similar|orphans|apps|updates")
+    print("Uso: mccli junk|trash|large|duplicates|similar|orphans|apps|updates|privacy|launch")
 }
 print(String(format: "(%.1fs)", Date().timeIntervalSince(started)))

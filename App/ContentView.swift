@@ -27,6 +27,10 @@ struct ContentView: View {
                 UninstallerView()
             case .updates?:
                 UpdatesView()
+            case .privacy?:
+                PrivacyView()
+            case .performance?:
+                PerformanceView()
             case nil:
                 ContentUnavailableView("Scegli una funzione", systemImage: "sparkles")
             }

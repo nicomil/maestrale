@@ -16,3 +16,12 @@ Componenti CMM: `Contents/Library/LaunchServices/com.macpaw.CleanMyMac5.Agent`, 
   - `runMaintenance(task:)` con un enum chiuso (`purge`, `flushDNS`, `reindexSpotlight`, `repairPermissions`, `periodic`), ognuno mappato su un comando fisso senza argomenti dall'esterno.
   - `launchctl(bootout label:)` solo per label già trovate dallo scanner.
 - Ogni operazione viene scritta in un log (`/Library/Logs/MacCleaner/helper.log`) con chiamante, percorso e risultato.
+
+## Implementazione attuale (M4)
+Su questo Mac non c'è un certificato di firma (`security find-identity` non trova identità), e un demone `SMAppService` firmato ad-hoc non viene avviato da launchd. Per questo le operazioni da amministratore passano da `AdminRunner`:
+- usa la richiesta password standard di macOS (`osascript … with administrator privileges`), una sola richiesta per operazione;
+- accetta solo l'insieme chiuso `AdminOperation` (rimozione nelle cartelle di sistema ammesse, purge, DNS, Spotlight, permessi, script periodici, istantanee locali, reti Wi‑Fi, fermare un daemon);
+- valida i percorsi con `SafeRemover` (radici ammesse, niente SIP, symlink risolti) prima di costruire il comando, e mette ogni argomento tra apici per la shell;
+- registra ogni operazione nel log.
+
+Quando ci sarà un certificato Apple Development si può aggiungere il demone descritto sopra senza cambiare l'interfaccia: basta un secondo backend per `AdminOperation`.

@@ -21,7 +21,10 @@ public final class OperationLog: Sendable {
         case .success(let bytes): status = "ok \(bytes)"
         case .failure(let error): status = "refused \(error)"
         }
-        let line = "\(ISO8601DateFormatter().string(from: Date()))\t\(mode.rawValue)\t\(status)\t\(outcome.url.path)\n"
+        append("\(ISO8601DateFormatter().string(from: Date()))\t\(mode.rawValue)\t\(status)\t\(outcome.url.path)\n")
+    }
+
+    private func append(_ line: String) {
         let url = fileURL
         queue.async {
             let fm = FileManager.default
@@ -34,6 +37,11 @@ public final class OperationLog: Sendable {
                 try? Data(line.utf8).write(to: url)
             }
         }
+    }
+
+    /// Records an operation run with administrator rights.
+    public func recordAdmin(_ title: String, ok: Bool, detail: String) {
+        append("\(ISO8601DateFormatter().string(from: Date()))\tadmin\t\(ok ? "ok" : "failed")\t\(title)\t\(detail)\n")
     }
 
     /// Waits until every pending line has been written. Used by tests.

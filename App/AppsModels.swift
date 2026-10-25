@@ -56,7 +56,7 @@ final class UninstallerModel {
         fileSelection = Set(files.filter { $0.autoSelect && !$0.needsHelper }.map(\.url))
     }
 
-    var selectedFiles: [ScanItem] { files.filter { fileSelection.contains($0.url) && !$0.needsHelper } }
+    var selectedFiles: [ScanItem] { files.filter { fileSelection.contains($0.url) } }
 
     /// Removes the selected files. With `reset`, the app itself is kept and
     /// only its data is removed, so it starts as freshly installed.
@@ -68,10 +68,18 @@ final class UninstallerModel {
             message = "Chiudi \(app.name) e riprova."
             return
         }
-        let urls = selectedFiles.map(\.url).filter { !reset || $0 != app.url }
+        let chosen = selectedFiles.filter { !reset || $0.url != app.url }
+        let urls = chosen.filter { !$0.needsHelper }.map(\.url)
         let remover = SafeRemover(allowedRoots: AllowedRoots.appSupport(), mode: mode)
-        let outcomes = await Task.detached { remover.remove(urls) }.value
-        message = AppModel.summary(outcomes, mode: mode)
+        var outcomes = await Task.detached { remover.remove(urls) }.value
+        var note = ""
+        let adminItems = chosen.filter(\.needsHelper)
+        if !adminItems.isEmpty {
+            let result = await AppModel.removeAsAdmin(adminItems, dryRun: mode == .dryRun)
+            outcomes += result.outcomes
+            note = result.note
+        }
+        message = AppModel.summary(outcomes, mode: mode) + note
         if mode != .dryRun {
             if !reset && outcomes.contains(where: { $0.url == app.url && (try? $0.result.get()) != nil }) {
                 apps.removeAll { $0.url == app.url }

@@ -22,6 +22,11 @@ public enum RemovalError: Error, Equatable, Sendable {
 public struct RemovalOutcome: Sendable {
     public let url: URL
     public let result: Result<Int64, RemovalError>
+
+    public init(url: URL, result: Result<Int64, RemovalError>) {
+        self.url = url
+        self.result = result
+    }
 }
 
 /// Removes files only inside a fixed set of folders.

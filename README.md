@@ -27,7 +27,10 @@ cd Packages/MacCleanerKit && swift build -c release --product mccli
 - Di default i file vanno nel **Cestino**. C'è una modalità "Prova" che non rimuove nulla.
 - `SafeRemover` rimuove solo dentro le cartelle elencate in `AllowedRoots`, risolve i symlink prima del controllo e rifiuta i file protetti da SIP.
 - Ogni operazione è registrata in `~/Library/Logs/MacCleaner/operations.log`.
-- Le categorie ad alto rischio non sono mai preselezionate. Quelle che richiedono privilegi di amministratore sono visibili ma disattivate finché non c'è l'helper.
+- Le categorie ad alto rischio non sono mai preselezionate. Gli elementi di sistema chiedono la password di amministratore e accettano solo un elenco chiuso di operazioni (`AdminOperation`).
+
+## Accesso completo al disco
+Molte cartelle (Safari, profili dei browser, dati di altre app) sono leggibili solo con l'Accesso completo al disco: Impostazioni di Sistema → Privacy e sicurezza → Accesso completo al disco → aggiungi MacCleaner. Con la firma ad-hoc macOS può dimenticare il permesso a ogni nuova build: se i risultati spariscono, toglilo e rimettilo.
 
 ## Stato
 | Milestone | Stato |
@@ -37,6 +40,6 @@ cd Packages/MacCleanerKit && swift build -c release --product mccli
 | M1: core, pulizia sistema, cestini | fatto (senza helper) |
 | M2: Space Lens, file grandi e vecchi, duplicati, immagini simili | fatto |
 | M3: disinstallazione, avanzi di app rimosse, aggiornamenti | fatto |
-| M4: privacy, performance, helper | da fare |
+| M4: privacy, prestazioni, operazioni da amministratore | fatto (password macOS al posto del demone, vedi `docs/spec/helper.md`) |
 | M5: malware, Mail, immagini disco | da fare |
 | M6: Smart Care, menu bar, pianificazione | da fare |

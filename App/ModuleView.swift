@@ -104,10 +104,12 @@ extension RemovalMode {
 }
 
 struct FullDiskAccessBanner: View {
+    var text = "Alcune cartelle non sono leggibili. Concedi l'Accesso completo al disco per risultati completi."
+
     var body: some View {
         HStack {
             Image(systemName: "lock.shield")
-            Text("Alcune cartelle non sono leggibili. Concedi l'Accesso completo al disco per risultati completi.")
+            Text(text)
             Spacer()
             Button("Apri Impostazioni") {
                 NSWorkspace.shared.open(URL(string:
@@ -144,7 +146,7 @@ private struct ResultsList: View {
     }
 
     private func categoryBinding(_ category: ScanCategory) -> Binding<Bool> {
-        let urls = category.items.filter { !$0.needsHelper && $0.url != category.keep }.map(\.url)
+        let urls = category.items.filter { $0.url != category.keep }.map(\.url)
         return Binding(
             get: { !urls.isEmpty && urls.allSatisfy(model.selection.contains) },
             set: { model.setCategory(category, selected: $0) }
@@ -177,10 +179,10 @@ private struct ItemRow: View {
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 }
             }
-            .disabled(item.needsHelper)
             if item.needsHelper {
-                Text("serve helper").font(.caption).padding(.horizontal, 6)
-                    .background(.secondary.opacity(0.15), in: Capsule())
+                Label("password", systemImage: "lock.fill").font(.caption).labelStyle(.titleAndIcon)
+                    .padding(.horizontal, 6).background(.secondary.opacity(0.15), in: Capsule())
+                    .help("Elemento di sistema: macOS chiederà la password di amministratore e verrà eliminato")
             }
             if item.risk == .high {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)

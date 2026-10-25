@@ -135,10 +135,10 @@ private struct FileRow: View {
                         .lineLimit(1).truncationMode(.middle)
                 }
             }
-            .disabled(file.needsHelper)
             if file.needsHelper {
-                Text("serve helper").font(.caption).padding(.horizontal, 6)
-                    .background(.secondary.opacity(0.15), in: Capsule())
+                Label("password", systemImage: "lock.fill").font(.caption)
+                    .padding(.horizontal, 6).background(.secondary.opacity(0.15), in: Capsule())
+                    .help("File di sistema: macOS chiederà la password di amministratore")
             }
             if file.risk == .medium && file.detail != "Applicazione" {
                 Image(systemName: "questionmark.circle").foregroundStyle(.secondary)
