@@ -38,9 +38,47 @@ final class AppModel {
         let icon: String
         var report: ScanReport?
         var isScanning = false
+        var scanStarted: Date?
         var error: String?
-        var lastCleanSummary: String?
+        var lastClean: CleanOutcome?
+        var lastCleanSummary: String? { lastClean?.summary }
         var id: String { module.id }
+    }
+
+    struct CleanOutcome {
+        let summary: String
+        let mode: RemovalMode
+    }
+
+    private var scanTasks: [String: Task<Void, Never>] = [:]
+
+    func startScan(_ id: String) {
+        scanTasks[id]?.cancel()
+        scanTasks[id] = Task { await scan(id) }
+    }
+
+    func cancelScan(_ id: String) {
+        scanTasks[id]?.cancel()
+        scanTasks[id] = nil
+        modules[id]?.isScanning = false
+    }
+
+    /// Short text for the sidebar: what the last scan found.
+    func badge(for destination: Destination) -> String? {
+        switch destination {
+        case .module(let id):
+            guard let state = modules[id] else { return nil }
+            if state.isScanning { return "…" }
+            guard let size = state.report?.totalSize, size > 0 else { return nil }
+            return ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
+        case .updates:
+            return updates.updates.isEmpty ? nil : "\(updates.updates.count)"
+        case .protection:
+            let count = protection.visibleFindings.filter { $0.severity >= .warning }.count
+            return count == 0 ? nil : "\(count)"
+        default:
+            return nil
+        }
     }
 
     var modules: [String: ModuleState] = [:]
@@ -113,17 +151,23 @@ final class AppModel {
     func scan(_ id: String) async {
         guard let module = modules[id]?.module else { return }
         modules[id]?.isScanning = true
+        modules[id]?.scanStarted = Date()
         modules[id]?.error = nil
         let activity = ProcessInfo.processInfo.beginActivity(
             options: [.userInitiated, .idleSystemSleepDisabled], reason: "Scansione")
         defer { ProcessInfo.processInfo.endActivity(activity) }
         do {
-            let report = try await Task.detached(priority: .userInitiated) { try await module.scan() }.value
+            let work = Task.detached(priority: .userInitiated) { try await module.scan() }
+            let report = try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
+            guard !Task.isCancelled else { return }
             modules[id]?.report = report
+            modules[id]?.lastClean = nil
             // Preselect only what the module marks as safe and what we can remove ourselves.
             selection.subtract(report.allItems.map(\.url))
             selection.formUnion(report.allItems.filter { $0.autoSelect && !$0.needsHelper }.map(\.url))
             // Items needing the password stay unselected until the user picks them.
+        } catch is CancellationError {
+            // The user pressed Annulla: keep the previous results.
         } catch {
             modules[id]?.error = error.localizedDescription
         }
@@ -169,9 +213,10 @@ final class AppModel {
             outcomes += result.outcomes
             adminNote = result.note
         }
-        modules[id]?.lastCleanSummary = Self.summary(outcomes, mode: mode) + adminNote
+        let outcome = CleanOutcome(summary: Self.summary(outcomes, mode: mode) + adminNote, mode: mode)
         isCleaning = false
         if mode != .dryRun { await scan(id) }
+        modules[id]?.lastClean = outcome
     }
 
     /// Removes system items with one administrator password prompt.

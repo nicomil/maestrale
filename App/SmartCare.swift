@@ -93,7 +93,8 @@ struct SmartCareView: View {
         return CareCard(title: "Pulizia", icon: "internaldrive", tint: .blue,
                         value: safeSize.map(formatBytes),
                         detail: junk == nil ? "Cache, log e file inutili"
-                            : "pronti da pulire · Cestino \(formatBytes(trash?.totalSize ?? 0))",
+                            : "pronti da pulire · " + ((trash?.totalSize ?? 0) > 0
+                                ? "Cestino \(formatBytes(trash?.totalSize ?? 0))" : "Cestino vuoto"),
                         isBusy: model.modules["system-junk"]?.isScanning == true) {
             HStack {
                 Button("Rivedi") { destination = .module("system-junk") }

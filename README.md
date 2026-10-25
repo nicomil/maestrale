@@ -43,3 +43,4 @@ Molte cartelle (Safari, profili dei browser, dati di altre app) sono leggibili s
 | M4: privacy, prestazioni, operazioni da amministratore | fatto (password macOS al posto del demone, vedi `docs/spec/helper.md`) |
 | M5: protezione (euristiche), allegati di Mail, installer | fatto |
 | M6: Smart Care, monitor nella barra dei menu, scansioni pianificate, impostazioni | fatto |
+| Rifinitura UI/UX: icona, benvenuto, badge in barra laterale, filtro, annulla scansione, conferma con "Apri Cestino", menu contestuale | fatto |
