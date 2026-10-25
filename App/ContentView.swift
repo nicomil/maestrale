@@ -3,15 +3,21 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(AppModel.self) private var model
-    @State private var destination: Destination? = .module("system-junk")
+    @State private var destination: Destination? = .smartCare
 
     var body: some View {
         NavigationSplitView {
             List(selection: $destination) {
                 ForEach(model.sections) { section in
-                    Section(section.title) {
+                    if section.title.isEmpty {
                         ForEach(section.entries) { entry in
                             Label(entry.title, systemImage: entry.icon).tag(entry.destination)
+                        }
+                    } else {
+                        Section(section.title) {
+                            ForEach(section.entries) { entry in
+                                Label(entry.title, systemImage: entry.icon).tag(entry.destination)
+                            }
                         }
                     }
                 }
@@ -19,6 +25,8 @@ struct ContentView: View {
             .navigationSplitViewColumnWidth(min: 190, ideal: 210)
         } detail: {
             switch destination {
+            case .smartCare?:
+                SmartCareView(destination: $destination)
             case .module(let id)?:
                 if let state = model.modules[id] { ModuleView(state: state) }
             case .spaceLens?:

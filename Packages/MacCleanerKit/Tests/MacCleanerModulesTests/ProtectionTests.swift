@@ -48,3 +48,16 @@ import Testing
         #expect(items.first { $0.displayName == "123" }?.detail == "report.pdf")
     }
 }
+
+@Suite struct SystemStatsTests {
+    @Test func snapshotIsSane() async throws {
+        let monitor = SystemMonitor()
+        _ = monitor.snapshot()
+        try await Task.sleep(for: .milliseconds(200))
+        let snap = monitor.snapshot()
+        #expect(snap.memoryTotal > 0)
+        #expect(snap.memoryUsed > 0 && snap.memoryUsed <= snap.memoryTotal)
+        #expect(snap.diskTotal > 0 && snap.diskFree > 0 && snap.diskFree < snap.diskTotal)
+        #expect((0...1).contains(snap.cpuUsage))
+    }
+}

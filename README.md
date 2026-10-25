@@ -42,4 +42,4 @@ Molte cartelle (Safari, profili dei browser, dati di altre app) sono leggibili s
 | M3: disinstallazione, avanzi di app rimosse, aggiornamenti | fatto |
 | M4: privacy, prestazioni, operazioni da amministratore | fatto (password macOS al posto del demone, vedi `docs/spec/helper.md`) |
 | M5: protezione (euristiche), allegati di Mail, installer | fatto |
-| M6: Smart Care, menu bar, pianificazione | da fare |
+| M6: Smart Care, monitor nella barra dei menu, scansioni pianificate, impostazioni | fatto |

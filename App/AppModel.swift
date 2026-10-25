@@ -5,6 +5,7 @@ import Observation
 
 /// Where the sidebar can take the user.
 enum Destination: Hashable {
+    case smartCare
     case module(String)
     case spaceLens
     case uninstaller
@@ -52,6 +53,8 @@ final class AppModel {
     let privacy = PrivacyModel()
     let performance = PerformanceModel()
     let protection = ProtectionModel()
+    let smartCare = SmartCareModel()
+    private let scheduler = Scheduler()
     private(set) var sections: [SidebarSection] = []
 
     init() {
@@ -67,7 +70,7 @@ final class AppModel {
 
         let space: [SidebarEntry] = [
             SidebarEntry(destination: .spaceLens, title: "Space Lens", icon: "circle.hexagongrid"),
-            add(LargeOldFilesModule(), icon: "doc.badge.clock"),
+            add(LargeOldFilesModule(minimumSize: Self.largeFileThreshold), icon: "doc.badge.clock"),
             add(DuplicatesModule(), icon: "doc.on.doc"),
             add(SimilarImagesModule(), icon: "photo.on.rectangle"),
         ]
@@ -76,7 +79,11 @@ final class AppModel {
             SidebarEntry(destination: .updates, title: "Aggiornamenti", icon: "arrow.down.app"),
             add(OrphanLeftoversModule(), icon: "puzzlepiece.extension"),
         ]
+        removalMode = RemovalMode(rawValue: UserDefaults.standard.string(forKey: "defaultRemovalMode") ?? "") ?? .trash
         sections = [
+            SidebarSection(title: "", entries: [
+                SidebarEntry(destination: .smartCare, title: "Smart Care", icon: "sparkles"),
+            ]),
             SidebarSection(title: "Pulizia", entries: cleanup),
             SidebarSection(title: "Spazio", entries: space),
             SidebarSection(title: "Applicazioni", entries: applications),
@@ -86,6 +93,21 @@ final class AppModel {
                 SidebarEntry(destination: .performance, title: "Prestazioni", icon: "gauge.with.dots.needle.67percent"),
             ]),
         ]
+    }
+
+    static var largeFileThreshold: Int64 {
+        let mb = UserDefaults.standard.integer(forKey: "largeFileMB")
+        return Int64(mb > 0 ? mb : 50) * 1_000_000
+    }
+
+    func setLargeFileThreshold(megabytes: Int) {
+        guard let icon = modules["large-old-files"]?.icon else { return }
+        modules["large-old-files"] = ModuleState(module: LargeOldFilesModule(minimumSize: Int64(megabytes) * 1_000_000),
+                                                 icon: icon)
+    }
+
+    func startScheduler() {
+        scheduler.start(self)
     }
 
     func scan(_ id: String) async {
