@@ -1,0 +1,8 @@
+re-notes/
+.DS_Store
+build/
+DerivedData/
+*.xcodeproj/xcuserdata/
+MacCleaner.xcodeproj/
+.build/
+.swiftpm/

@@ -1,0 +1,41 @@
+import Foundation
+import MacCleanerCore
+
+/// The user's Trash and the Trash folders of mounted volumes.
+/// Emptying them is permanent, so nothing is selected by default.
+public struct TrashModule: CleanerModule {
+    public let id = "trash"
+    public let title = "Cestini"
+    private let home: URL
+
+    public init(home: URL = FileManager.default.homeDirectoryForCurrentUser) {
+        self.home = home
+    }
+
+    public func scan() async throws -> ScanReport {
+        let engine = RuleEngine(home: home)
+        let output = engine.evaluate(Self.rules)
+        return ScanReport(moduleID: id, categories: output.categories, unreadablePaths: output.unreadable)
+    }
+
+    /// Folders whose content can be removed by this module.
+    public func allowedRoots() -> [URL] {
+        [home.appendingPathComponent(".Trash")] + RuleEngine(home: home).expand("/Volumes/*/.Trashes/$UID")
+    }
+
+    static let rules: RuleSet = {
+        let json = """
+        {
+          "version": 1,
+          "rules": [
+            {"id": "user-trash", "category": "user-trash", "title": "Cestino",
+             "paths": ["~/.Trash"], "risk": "high", "autoSelect": false},
+            {"id": "volume-trashes", "category": "volume-trashes", "title": "Cestini dei dischi esterni",
+             "paths": ["/Volumes/*/.Trashes/$UID"], "risk": "high", "autoSelect": false}
+          ]
+        }
+        """
+        // The JSON above is fixed and tested, so a failure here is a programming error.
+        return try! JSONDecoder().decode(RuleSet.self, from: Data(json.utf8))
+    }()
+}

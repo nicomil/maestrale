@@ -1,0 +1,53 @@
+name: MacCleaner
+options:
+  bundleIdPrefix: it.nico
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+packages:
+  MacCleanerKit:
+    path: Packages/MacCleanerKit
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+
+targets:
+  MacCleaner:
+    type: application
+    platform: macOS
+    sources: [App]
+    dependencies:
+      - package: MacCleanerKit
+        product: MacCleanerCore
+      - package: MacCleanerKit
+        product: MacCleanerModules
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: MacCleaner
+        LSApplicationCategoryType: public.app-category.utilities
+        NSHumanReadableCopyright: Uso personale
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: it.nico.maccleaner
+        # Not sandboxed: the app must read and clean folders across the home.
+        ENABLE_APP_SANDBOX: NO
+        ENABLE_HARDENED_RUNTIME: YES
+        # Ad-hoc signing for local use. Switch to your Apple ID team when the
+        # privileged helper (SMAppService) is added.
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  MacCleaner:
+    build:
+      targets:
+        MacCleaner: all
+    test:
+      targets:
+        - package: MacCleanerKit/MacCleanerCoreTests
+        - package: MacCleanerKit/MacCleanerModulesTests
