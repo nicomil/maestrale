@@ -19,7 +19,7 @@ public struct TrashModule: CleanerModule {
     }
 
     /// Folders whose content can be removed by this module.
-    public func allowedRoots() -> [URL] {
+    public var allowedRoots: [URL] {
         [home.appendingPathComponent(".Trash")] + RuleEngine(home: home).expand("/Volumes/*/.Trashes/$UID")
     }
 

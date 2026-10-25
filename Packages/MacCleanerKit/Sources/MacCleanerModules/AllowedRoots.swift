@@ -22,4 +22,15 @@ public enum AllowedRoots {
         return relative.map { home.appendingPathComponent($0) }
             + RuleEngine(home: home).expand("/Volumes/*/.Trashes/$UID")
     }
+
+    /// The user's own document folders (Desktop, Documents, Downloads, Movies,
+    /// any other visible folder in the home), excluding Library and Applications.
+    /// Used by the modules that list personal files: removal goes to the Trash.
+    public static func userFiles(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> [URL] {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: home.path)) ?? []
+        return names
+            .filter { !$0.hasPrefix(".") && !["Library", "Applications"].contains($0) }
+            .map { home.appendingPathComponent($0) }
+            .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true }
+    }
 }

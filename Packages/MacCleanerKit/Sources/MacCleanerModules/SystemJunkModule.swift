@@ -15,6 +15,8 @@ public struct SystemJunkModule: CleanerModule {
         self.home = home
     }
 
+    public var allowedRoots: [URL] { AllowedRoots.user(home: home) }
+
     public static func bundledRules() throws -> RuleSet {
         guard let url = Bundle.module.url(forResource: "system-junk", withExtension: "json") else {
             throw CocoaError(.fileNoSuchFile)

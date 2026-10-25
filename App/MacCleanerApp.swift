@@ -8,7 +8,8 @@ struct MacCleanerApp: App {
         WindowGroup("MacCleaner") {
             ContentView()
                 .environment(model)
-                .frame(minWidth: 820, minHeight: 520)
+                .frame(minWidth: 960, minHeight: 600)
         }
+        .defaultSize(width: 1180, height: 760)
     }
 }

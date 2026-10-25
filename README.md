@@ -31,7 +31,7 @@ open build/DerivedData/Build/Products/Debug/MacCleaner.app
 | Fase 0: rea + Ghidra | fatto |
 | Fase 1: specifiche (statica + cattura dinamica) | fatto |
 | M1: core, pulizia sistema, cestini | fatto (senza helper) |
-| M2: Space Lens, file grandi, duplicati | da fare |
+| M2: Space Lens, file grandi e vecchi, duplicati, immagini simili | fatto |
 | M3: uninstaller, avanzi, updater | da fare |
 | M4: privacy, performance, helper | da fare |
 | M5: malware, Mail, immagini disco | da fare |

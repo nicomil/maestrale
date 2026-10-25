@@ -3,50 +3,89 @@ import MacCleanerCore
 import MacCleanerModules
 import Observation
 
+/// Where the sidebar can take the user.
+enum Destination: Hashable {
+    case module(String)
+    case spaceLens
+}
+
+/// A sidebar group.
+struct SidebarSection: Identifiable {
+    let title: String
+    let entries: [SidebarEntry]
+    var id: String { title }
+}
+
+struct SidebarEntry: Identifiable, Hashable {
+    let destination: Destination
+    let title: String
+    let icon: String
+    var id: Destination { destination }
+}
+
 /// State shared by the whole window: scan results, selection and cleaning.
 @MainActor
 @Observable
 final class AppModel {
     struct ModuleState: Identifiable {
         let module: any CleanerModule
+        let icon: String
         var report: ScanReport?
         var isScanning = false
         var error: String?
+        var lastCleanSummary: String?
         var id: String { module.id }
     }
 
-    var modules: [ModuleState] = []
+    var modules: [String: ModuleState] = [:]
     var selection: Set<URL> = []
     var removalMode: RemovalMode = .trash
     var isCleaning = false
-    var lastCleanSummary: String?
+    let spaceLens = SpaceLensModel()
+    private(set) var sections: [SidebarSection] = []
 
     init() {
-        var list: [ModuleState] = []
-        if let junk = try? SystemJunkModule() { list.append(ModuleState(module: junk)) }
-        list.append(ModuleState(module: TrashModule()))
-        modules = list
+        func add(_ module: any CleanerModule, icon: String) -> SidebarEntry {
+            modules[module.id] = ModuleState(module: module, icon: icon)
+            return SidebarEntry(destination: .module(module.id), title: module.title, icon: icon)
+        }
+        var cleanup: [SidebarEntry] = []
+        if let junk = try? SystemJunkModule() { cleanup.append(add(junk, icon: "internaldrive")) }
+        cleanup.append(add(TrashModule(), icon: "trash"))
+
+        let space: [SidebarEntry] = [
+            SidebarEntry(destination: .spaceLens, title: "Space Lens", icon: "circle.hexagongrid"),
+            add(LargeOldFilesModule(), icon: "doc.badge.clock"),
+            add(DuplicatesModule(), icon: "doc.on.doc"),
+            add(SimilarImagesModule(), icon: "photo.on.rectangle"),
+        ]
+        sections = [
+            SidebarSection(title: "Pulizia", entries: cleanup),
+            SidebarSection(title: "Spazio", entries: space),
+        ]
     }
 
     func scan(_ id: String) async {
-        guard let index = modules.firstIndex(where: { $0.id == id }) else { return }
-        modules[index].isScanning = true
-        modules[index].error = nil
-        let module = modules[index].module
+        guard let module = modules[id]?.module else { return }
+        modules[id]?.isScanning = true
+        modules[id]?.error = nil
+        let activity = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiated, .idleSystemSleepDisabled], reason: "Scansione")
+        defer { ProcessInfo.processInfo.endActivity(activity) }
         do {
             let report = try await Task.detached(priority: .userInitiated) { try await module.scan() }.value
-            modules[index].report = report
-            // Preselect only what the rules mark as safe and what we can remove ourselves.
+            modules[id]?.report = report
+            // Preselect only what the module marks as safe and what we can remove ourselves.
             selection.subtract(report.allItems.map(\.url))
             selection.formUnion(report.allItems.filter { $0.autoSelect && !$0.needsHelper }.map(\.url))
         } catch {
-            modules[index].error = error.localizedDescription
+            modules[id]?.error = error.localizedDescription
         }
-        modules[index].isScanning = false
+        modules[id]?.isScanning = false
     }
 
     func selectedItems(in id: String) -> [ScanItem] {
-        guard let report = modules.first(where: { $0.id == id })?.report else { return [] }
+        guard let report = modules[id]?.report else { return [] }
         return report.allItems.filter { selection.contains($0.url) && !$0.needsHelper }
     }
 
@@ -54,19 +93,116 @@ final class AppModel {
         selectedItems(in: id).reduce(0) { $0 + $1.size }
     }
 
+    /// Groups of copies where every item is selected: cleaning them would
+    /// leave no copy at all, so the clean is blocked until one is unselected.
+    func fullySelectedCopyGroups(in id: String) -> [ScanCategory] {
+        guard let report = modules[id]?.report else { return [] }
+        return report.categories.filter { category in
+            category.keep != nil && category.items.allSatisfy { selection.contains($0.url) }
+        }
+    }
+
+    func setCategory(_ category: ScanCategory, selected: Bool) {
+        let urls = category.items.filter { !$0.needsHelper && $0.url != category.keep }.map(\.url)
+        if selected { selection.formUnion(urls) } else { selection.subtract(category.items.map(\.url)) }
+    }
+
     func clean(_ id: String) async {
+        guard let module = modules[id]?.module, fullySelectedCopyGroups(in: id).isEmpty else { return }
         let items = selectedItems(in: id)
         guard !items.isEmpty else { return }
         isCleaning = true
-        let remover = SafeRemover(allowedRoots: AllowedRoots.user(), mode: removalMode)
+        let mode = removalMode
+        let remover = SafeRemover(allowedRoots: module.allowedRoots, mode: mode)
         let outcomes = await Task.detached { remover.remove(items.map(\.url)) }.value
+        modules[id]?.lastCleanSummary = Self.summary(outcomes, mode: mode)
+        isCleaning = false
+        if mode != .dryRun { await scan(id) }
+    }
 
+    static func summary(_ outcomes: [RemovalOutcome], mode: RemovalMode) -> String {
         let freed = outcomes.reduce(Int64(0)) { $0 + ((try? $1.result.get()) ?? 0) }
         let refused = outcomes.filter { (try? $0.result.get()) == nil }.count
-        let verb = removalMode == .dryRun ? "Si libererebbero" : "Liberati"
-        lastCleanSummary = "\(verb) \(ByteCountFormatter.string(fromByteCount: freed, countStyle: .file))"
-            + (refused > 0 ? " · \(refused) elementi non rimossi (vedi log)" : "")
-        isCleaning = false
-        if removalMode != .dryRun { await scan(id) }
+        let verb = mode == .dryRun ? "Si libererebbero" : "Liberati"
+        return "\(verb) \(ByteCountFormatter.string(fromByteCount: freed, countStyle: .file))"
+            + (refused > 0 ? " · \(refused) non rimossi (vedi log)" : "")
+    }
+}
+
+/// State of the Space Lens map.
+@MainActor
+@Observable
+final class SpaceLensModel {
+    var root: DiskNode?
+    /// Folders the user has opened, from the root down.
+    var path: [DiskNode] = []
+    var isScanning = false
+    var scannedFiles = 0
+    var scannedBytes: Int64 = 0
+    var selection: Set<URL> = []
+    var lastCleanSummary: String?
+    private var scanTask: Task<Void, Never>?
+
+    var current: DiskNode? { path.last ?? root }
+
+    var allowedRoots: [URL] { AllowedRoots.userFiles() + AllowedRoots.user() }
+
+    func scan(_ url: URL) {
+        scanTask?.cancel()
+        isScanning = true
+        root = nil
+        path = []
+        selection = []
+        let counter = ScanCounter()
+        scanTask = Task {
+            // Keeps App Nap from throttling the scan and the progress label
+            // while the window is in the background.
+            let activity = ProcessInfo.processInfo.beginActivity(
+                options: [.userInitiated, .idleSystemSleepDisabled], reason: "Space Lens")
+            defer { ProcessInfo.processInfo.endActivity(activity) }
+            let progress = Task {
+                while !Task.isCancelled {
+                    let snap = counter.snapshot
+                    scannedFiles = snap.files
+                    scannedBytes = snap.bytes
+                    try? await Task.sleep(for: .milliseconds(200))
+                }
+            }
+            let node = await Task.detached(priority: .userInitiated) {
+                await SpaceLensScanner().scan(url, counter: counter)
+            }.value
+            progress.cancel()
+            if !Task.isCancelled { root = node }
+            isScanning = false
+        }
+    }
+
+    func cancel() {
+        scanTask?.cancel()
+        isScanning = false
+    }
+
+    func open(_ node: DiskNode) {
+        guard node.isDirectory, !node.children.isEmpty else { return }
+        path.append(node)
+    }
+
+    func goUp(to index: Int?) {
+        if let index { path = Array(path.prefix(index + 1)) } else { path = [] }
+    }
+
+    func selectedNodes() -> [DiskNode] {
+        guard let current else { return [] }
+        return current.children.filter { selection.contains($0.url) && !$0.isAggregate }
+    }
+
+    func trashSelected(mode: RemovalMode) async {
+        let urls = selectedNodes().map(\.url)
+        guard !urls.isEmpty else { return }
+        let remover = SafeRemover(allowedRoots: allowedRoots, mode: mode)
+        let outcomes = await Task.detached { remover.remove(urls) }.value
+        lastCleanSummary = AppModel.summary(outcomes, mode: mode)
+        selection = []
+        if mode != .dryRun, let rootURL = root?.url { scan(rootURL) }
     }
 }
