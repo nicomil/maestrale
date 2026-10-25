@@ -15,6 +15,8 @@ let package = Package(
             dependencies: ["MacCleanerCore"],
             resources: [.process("Resources")]
         ),
+        // Read-only command line tool to try scans on the real Mac: it never removes anything.
+        .executableTarget(name: "mccli", dependencies: ["MacCleanerModules"]),
         .testTarget(name: "MacCleanerCoreTests", dependencies: ["MacCleanerCore"]),
         .testTarget(name: "MacCleanerModulesTests", dependencies: ["MacCleanerModules"]),
     ]

@@ -23,6 +23,10 @@ struct ContentView: View {
                 if let state = model.modules[id] { ModuleView(state: state) }
             case .spaceLens?:
                 SpaceLensView()
+            case .uninstaller?:
+                UninstallerView()
+            case .updates?:
+                UpdatesView()
             case nil:
                 ContentUnavailableView("Scegli una funzione", systemImage: "sparkles")
             }

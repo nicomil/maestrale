@@ -17,6 +17,10 @@ xcodegen generate
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
   -project MacCleaner.xcodeproj -scheme MacCleaner -derivedDataPath build/DerivedData build
 open build/DerivedData/Build/Products/Debug/MacCleaner.app
+
+# Prova delle scansioni da Terminale (sola lettura, non rimuove nulla)
+cd Packages/MacCleanerKit && swift build -c release --product mccli
+.build/release/mccli junk|trash|large|duplicates|similar|orphans|apps|updates
 ```
 
 ## Sicurezza
@@ -32,7 +36,7 @@ open build/DerivedData/Build/Products/Debug/MacCleaner.app
 | Fase 1: specifiche (statica + cattura dinamica) | fatto |
 | M1: core, pulizia sistema, cestini | fatto (senza helper) |
 | M2: Space Lens, file grandi e vecchi, duplicati, immagini simili | fatto |
-| M3: uninstaller, avanzi, updater | da fare |
+| M3: disinstallazione, avanzi di app rimosse, aggiornamenti | fatto |
 | M4: privacy, performance, helper | da fare |
 | M5: malware, Mail, immagini disco | da fare |
 | M6: Smart Care, menu bar, pianificazione | da fare |

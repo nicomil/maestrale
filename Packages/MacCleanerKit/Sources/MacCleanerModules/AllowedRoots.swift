@@ -33,4 +33,14 @@ public enum AllowedRoots {
             .map { home.appendingPathComponent($0) }
             .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true }
     }
+
+    /// Everything an uninstall may remove: the app folders and the per-app
+    /// folders of ~/Library. System folders (/Library) need the helper.
+    public static func appSupport(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> [URL] {
+        let library = ["Application Support", "Caches", "HTTPStorages", "WebKit", "Logs", "Preferences",
+                       "Containers", "Group Containers", "Saved Application State", "Cookies",
+                       "Application Scripts", "LaunchAgents"]
+        return [URL(fileURLWithPath: "/Applications"), home.appendingPathComponent("Applications")]
+            + library.map { home.appendingPathComponent("Library").appendingPathComponent($0) }
+    }
 }

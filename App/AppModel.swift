@@ -7,6 +7,8 @@ import Observation
 enum Destination: Hashable {
     case module(String)
     case spaceLens
+    case uninstaller
+    case updates
 }
 
 /// A sidebar group.
@@ -42,6 +44,8 @@ final class AppModel {
     var removalMode: RemovalMode = .trash
     var isCleaning = false
     let spaceLens = SpaceLensModel()
+    let uninstaller = UninstallerModel()
+    let updates = UpdatesModel()
     private(set) var sections: [SidebarSection] = []
 
     init() {
@@ -59,9 +63,15 @@ final class AppModel {
             add(DuplicatesModule(), icon: "doc.on.doc"),
             add(SimilarImagesModule(), icon: "photo.on.rectangle"),
         ]
+        let applications: [SidebarEntry] = [
+            SidebarEntry(destination: .uninstaller, title: "Disinstallazione", icon: "xmark.app"),
+            SidebarEntry(destination: .updates, title: "Aggiornamenti", icon: "arrow.down.app"),
+            add(OrphanLeftoversModule(), icon: "puzzlepiece.extension"),
+        ]
         sections = [
             SidebarSection(title: "Pulizia", entries: cleanup),
             SidebarSection(title: "Spazio", entries: space),
+            SidebarSection(title: "Applicazioni", entries: applications),
         ]
     }
 
