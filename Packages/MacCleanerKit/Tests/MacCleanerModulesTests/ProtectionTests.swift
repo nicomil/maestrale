@@ -5,19 +5,19 @@ import Testing
 
 @Suite struct ProtectionTests {
     @Test func suspiciousLocations() {
-        #expect(MalwareScanner.location("/tmp/x/agent") == .temporary)
-        #expect(MalwareScanner.location("/Users/Shared/.hidden/run") == .temporary)
-        #expect(MalwareScanner.location("/Users/me/Library/Application Support/.sys/update") == .hidden)
-        #expect(MalwareScanner.location("/Applications/Zoom.app/Contents/MacOS/zoom") == .normal)
-        #expect(MalwareScanner.location("/Library/Application Support/Vendor/helper") == .normal)
+        #expect(KnownLocations.kind(of: "/tmp/x/agent") == .temporary)
+        #expect(KnownLocations.kind(of: "/Users/Shared/.hidden/run") == .temporary)
+        #expect(KnownLocations.kind(of: "/Users/me/Library/Application Support/.sys/update") == .hidden)
+        #expect(KnownLocations.kind(of: "/Applications/Zoom.app/Contents/MacOS/zoom") == .normal)
+        #expect(KnownLocations.kind(of: "/Library/Application Support/Vendor/helper") == .normal)
     }
 
     @Test func signatureClassification() throws {
-        #expect(MalwareScanner.signature(of: URL(fileURLWithPath: "/bin/ls")) == .apple)
+        #expect(SecurityFrameworkSignatures().signature(of: URL(fileURLWithPath: "/bin/ls")) == .apple)
         let home = try FakeHome(); defer { home.remove() }
         let script = try home.file("tool.sh", bytes: 0)
         try "#!/bin/sh\necho hi\n".write(to: script, atomically: true, encoding: .utf8)
-        #expect(MalwareScanner.signature(of: script) == .unsigned)
+        #expect(SecurityFrameworkSignatures().signature(of: script) == .unsigned)
     }
 
     @Test func installersOfInstalledAppsArePreselected() async throws {
@@ -73,7 +73,7 @@ import Testing
         let prefs: [String: Any] = ["extensions": ["settings": ["fromstore": ["creation_flags": 9, "location": 1]]]]
         try JSONSerialization.data(withJSONObject: prefs).write(to: profile.appendingPathComponent("Secure Preferences"))
 
-        let findings = MalwareScanner(home: home.url).chromiumExtensions()
+        let findings = BrowserExtensionsCheck().run(CheckContext(home: home.url, signatures: FakeSignatures(), commands: FakeCommands(), launchItems: []))
         #expect(findings.map(\.title) == ["Google Chrome: forged"])
         #expect(findings.first?.severity == .warning)
     }

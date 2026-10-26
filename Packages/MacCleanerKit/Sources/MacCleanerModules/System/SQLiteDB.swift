@@ -90,6 +90,21 @@ final class SQLiteDB {
         return String(cString: value)
     }
 
+    /// Every row of a query, each column as text ("" for NULL).
+    func rows(_ sql: String) -> [[String]] {
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(handle, sql, -1, &statement, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(statement) }
+        let columns = Int(sqlite3_column_count(statement))
+        var result: [[String]] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            result.append((0..<columns).map { column in
+                sqlite3_column_text(statement, Int32(column)).map { String(cString: $0) } ?? ""
+            })
+        }
+        return result
+    }
+
     func tableExists(_ name: String) -> Bool {
         count("sqlite_master", where: "type='table' AND name='\(name)'").map { $0 > 0 } ?? false
     }

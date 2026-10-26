@@ -13,6 +13,7 @@ enum Destination: Hashable {
     case privacy
     case performance
     case protection
+    case activity
 }
 
 /// A sidebar group.
@@ -91,6 +92,7 @@ final class AppModel {
     let privacy = PrivacyModel()
     let performance = PerformanceModel()
     let protection = ProtectionModel()
+    let activity = ActivityModel()
     let smartCare = SmartCareModel()
     private let scheduler = Scheduler()
     private(set) var sections: [SidebarSection] = []
@@ -127,6 +129,7 @@ final class AppModel {
             SidebarSection(title: "Applicazioni", entries: applications),
             SidebarSection(title: "Protezione e velocità", entries: [
                 SidebarEntry(destination: .protection, title: "Protezione", icon: "shield.lefthalf.filled"),
+                SidebarEntry(destination: .activity, title: "Attività", icon: "waveform.path.ecg"),
                 SidebarEntry(destination: .privacy, title: "Privacy", icon: "hand.raised"),
                 SidebarEntry(destination: .performance, title: "Prestazioni", icon: "gauge.with.dots.needle.67percent"),
             ]),

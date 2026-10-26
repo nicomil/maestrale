@@ -19,6 +19,16 @@ public enum AdminOperation: Sendable, Equatable {
     case bootoutDaemon(label: String)
     /// Stop a daemon and, only if it stopped, move its plist (in /Library/LaunchDaemons) to the Trash.
     case removeDaemon(label: String, plist: URL)
+    /// Ask macOS to fetch the latest XProtect definitions now.
+    case updateXProtect
+    /// Read-only: print the root-only facts the Protection checks need (see `SystemEvidence.shellCommand`).
+    case collectSystemEvidence
+    /// Move system files into a new folder of the system quarantine (`Quarantine.systemFolder/<id>`), then lock it.
+    case quarantine([URL], id: UUID)
+    /// Put a quarantined system item back into its original folder.
+    case restoreQuarantined(id: UUID, name: String, into: URL)
+    /// Delete a system quarantine folder for good.
+    case deleteQuarantined(id: UUID)
 
     public var title: String {
         switch self {
@@ -33,6 +43,11 @@ public enum AdminOperation: Sendable, Equatable {
         case .removeWiFiNetwork(let name): "Dimenticare la rete \(name)"
         case .bootoutDaemon(let label): "Fermare \(label)"
         case .removeDaemon(let label, _): "Fermare e rimuovere \(label)"
+        case .updateXProtect: "Aggiornare le definizioni XProtect"
+        case .collectSystemEvidence: "Leggere le impostazioni di sistema per il controllo approfondito"
+        case .quarantine(let urls, _): "Mettere in quarantena \(urls.count) elementi di sistema"
+        case .restoreQuarantined(_, let name, _): "Ripristinare \(name) dalla quarantena"
+        case .deleteQuarantined: "Eliminare un elemento dalla quarantena"
         }
     }
 }
@@ -102,6 +117,32 @@ public struct AdminRunner: Sendable {
             return "/usr/sbin/periodic daily weekly monthly"
         case .thinLocalSnapshots:
             return "/usr/bin/tmutil thinlocalsnapshots / 999999999999 4"
+        case .collectSystemEvidence:
+            return SystemEvidence.shellCommand
+        case .quarantine(let urls, let id):
+            try Self.validateSystemItems(urls)
+            let folder = Self.shellQuote(Quarantine.systemFolder + "/" + id.uuidString)
+            // The folder is created by root right now, so the helper's owner
+            // check (0) holds; then nothing in it may run or be read.
+            return "/bin/mkdir -p -m 700 \(folder) || exit 1; "
+                + (try helperCommand(["trash", Quarantine.systemFolder + "/" + id.uuidString, "0"] + Self.helperItems(urls)))
+                    .replacingOccurrences(of: "exit $rc", with: "/bin/chmod -R 000 \(folder); /bin/chmod 700 \(folder); exit $rc")
+        case .restoreQuarantined(let id, let name, let destination):
+            guard PinnedFileSystem.isPlainName(name), let target = Self.realPath(destination),
+                  SystemRoots.paths.contains(where: { target == $0 || target.hasPrefix($0 + "/") }) else {
+                throw AdminError.refused("\(destination.path): fuori dalle cartelle di sistema consentite")
+            }
+            let folder = Quarantine.systemFolder + "/" + id.uuidString
+            return "/bin/chmod -R u+rwX \(Self.shellQuote(folder)) || exit 1; "
+                + (try helperCommand(["trash", target, "0", folder, name]))
+                    .replacingOccurrences(of: "exit $rc", with: "/bin/rmdir \(Self.shellQuote(folder)) 2>/dev/null; exit $rc")
+        case .deleteQuarantined(let id):
+            return "/bin/chmod -R u+rwX \(Self.shellQuote(Quarantine.systemFolder + "/" + id.uuidString)) 2>/dev/null; "
+                + (try helperCommand(["remove", Quarantine.systemFolder, id.uuidString]))
+        case .updateXProtect:
+            // `xprotect` exists from macOS 15; older systems take the softwareupdate route.
+            return FileManager.default.isExecutableFile(atPath: "/usr/bin/xprotect")
+                ? "/usr/bin/xprotect update" : "/usr/sbin/softwareupdate --background-critical"
         case .removeWiFiNetwork(let name):
             guard !name.isEmpty, name.count <= 64 else { throw AdminError.refused("nome rete non valido") }
             return "/usr/sbin/networksetup -removepreferredwirelessnetwork \(Self.wifiInterface()) \(Self.shellQuote(name))"
@@ -181,6 +222,12 @@ public struct AdminRunner: Sendable {
     /// Asks for the password and runs the operation. Blocks until done.
     /// Throws `itemsFailed` when the helper could not handle every item.
     public func run(_ operation: AdminOperation) throws {
+        _ = try runCapturing(operation)
+    }
+
+    /// Like `run`, returning what the operation printed.
+    @discardableResult
+    public func runCapturing(_ operation: AdminOperation) throws -> String {
         let shell = try command(for: operation)
         let script = "do shell script \(Self.appleScriptString(shell)) with administrator privileges "
             + "with prompt \(Self.appleScriptString("MacCleaner: \(operation.title)")) without altering line endings"
@@ -203,10 +250,11 @@ public struct AdminRunner: Sendable {
             throw AdminError.failed(message.trimmingCharacters(in: .whitespacesAndNewlines))
         }
         if !failed.isEmpty { throw AdminError.itemsFailed(done: done, failed: failed) }
+        return report
     }
 
     /// Splits the helper's "ok"/"err" lines into handled paths and failures.
-    static func parseHelperReport(_ text: String) -> (done: [String], failed: [String]) {
+    public static func parseHelperReport(_ text: String) -> (done: [String], failed: [String]) {
         var done: [String] = [], failed: [String] = []
         for line in text.split(whereSeparator: \.isNewline) {
             let fields = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)

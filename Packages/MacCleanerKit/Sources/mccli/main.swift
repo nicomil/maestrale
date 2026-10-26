@@ -61,9 +61,57 @@ case "malware":
     print("Gatekeeper \(status.gatekeeperEnabled.map { $0 ? "on" : "OFF" } ?? "?"), SIP \(status.sipEnabled.map { $0 ? "on" : "OFF" } ?? "?"), "
           + "firewall \(status.firewallEnabled.map { $0 ? "on" : "off" } ?? "?"), XProtect \(status.xprotectVersion ?? "?")")
     for finding in scanner.scan() {
+        print("[\(finding.severity)] \(finding.category.title) · \(finding.title): \(finding.reasons.joined(separator: "; "))")
+        for line in finding.evidence { print("    \(line)") }
+    }
+case "processes":
+    let sampler = ProcessSampler()
+    _ = sampler.sample()
+    try await Task.sleep(for: .seconds(2))
+    let activities = sampler.sample().sorted { $0.cpu > $1.cpu }
+    for activity in activities.prefix(15) {
+        print(String(format: "%6d %5.0f%% %8@ net %8@/s disk %8@/s  %@", activity.process.pid, activity.cpu * 100,
+                     ByteCountFormatter.string(fromByteCount: Int64(activity.memory), countStyle: .memory),
+                     ByteCountFormatter.string(fromByteCount: Int64(activity.networkInPerSecond + activity.networkOutPerSecond), countStyle: .file),
+                     ByteCountFormatter.string(fromByteCount: Int64(activity.diskReadPerSecond + activity.diskWritePerSecond), countStyle: .file),
+                     activity.process.path ?? activity.process.name))
+    }
+    for finding in ProcessesCheck().run(CheckContext(launchItems: [])) {
         print("[\(finding.severity)] \(finding.title): \(finding.reasons.joined(separator: "; "))")
+        for line in finding.evidence { print("    \(line)") }
+    }
+case "signatures":
+    let store = RuleStore()
+    print("Regole: \(store.ruleSources().map(\.namespace).joined(separator: ", ")) · hash noti: \(KnownHashes.load(store.hashFiles()).entries.count)")
+    let enumerationStart = Date()
+    let candidates = ScanTargets.candidates(home: FileManager.default.homeDirectoryForCurrentUser, launchItems: LaunchItemsScanner().scan())
+    print("\(candidates.count) file candidati in \(String(format: "%.1f", Date().timeIntervalSince(enumerationStart)))s")
+    if CommandLine.arguments.contains("--list") { for url in candidates { print("  \(url.path)") } }
+    if CommandLine.arguments.contains("--time"), let engine = try? YaraEngine(sources: store.ruleSources()) {
+        var slow: [(Double, String, Int)] = []
+        let scanStart = Date()
+        for url in candidates {
+            let t = Date()
+            _ = try? engine.scan(file: url)
+            let d = Date().timeIntervalSince(t)
+            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            if d > 0.3 { slow.append((d, url.path, size)) }
+        }
+        print("scansione YARA \(String(format: "%.1f", Date().timeIntervalSince(scanStart)))s")
+        for (d, p, sz) in slow.sorted(by: { $0.0 > $1.0 }).prefix(10) { print(String(format: "%6.1fs %10d %@", d, sz, p)) }
+        exit(0)
+    }
+    for finding in SignatureScanCheck().run(CheckContext()) {
+        print("[\(finding.severity)] \(finding.title): \(finding.reasons.joined(separator: "; "))")
+        for line in finding.evidence { print("    \(line)") }
+    }
+case "posture":
+    let context = CheckContext(launchItems: [])
+    for finding in (PostureCheck().run(context) + XProtectCheck().run(context)) {
+        print("[\(finding.severity)] \(finding.title): \(finding.reasons.joined(separator: "; "))")
+        for line in finding.evidence { print("    \(line)") }
     }
 default:
-    print("Uso: mccli junk|trash|large|duplicates|similar|orphans|apps|updates|privacy|launch|mail|installers|malware")
+    print("Uso: mccli junk|trash|large|duplicates|similar|orphans|apps|updates|privacy|launch|mail|installers|malware|posture|processes|signatures")
 }
 print(String(format: "(%.1fs)", Date().timeIntervalSince(started)))

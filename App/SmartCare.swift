@@ -122,10 +122,15 @@ struct SmartCareView: View {
     }
 
     private var protectionCard: some View {
-        let count = model.protection.visibleFindings.filter { $0.severity >= .warning }.count
-        return CareCard(title: "Protezione", icon: "shield.lefthalf.filled", tint: count == 0 ? .green : .orange,
-                        value: model.protection.hasScanned ? (count == 0 ? "Nessun rischio" : "\(count) avvisi") : nil,
-                        detail: "Avvio automatico, firme ed estensioni",
+        let findings = model.protection.visibleFindings
+        let dangers = findings.filter { $0.severity == .danger }.count
+        let warnings = findings.filter { $0.severity == .warning }.count
+        let new = model.protection.newFindings.count
+        let tint: Color = dangers > 0 ? .red : warnings > 0 ? .orange : .green
+        let value = !model.protection.hasScanned ? nil
+            : dangers > 0 ? "\(dangers) pericoli" : warnings > 0 ? "\(warnings) avvisi" : "Nessun rischio"
+        return CareCard(title: "Protezione", icon: "shield.lefthalf.filled", tint: tint, value: value,
+                        detail: new > 0 ? "\(new) nuovi dall'ultimo controllo" : "Avvio, processi, browser, rete, difese",
                         isBusy: model.protection.isScanning) {
             Button("Apri") { destination = .protection }
         }
@@ -218,6 +223,16 @@ final class Scheduler {
         guard Date().timeIntervalSince(last) >= interval else { return }
         UserDefaults.standard.set(Date(), forKey: Self.lastRunKey)
         await app.scan("system-junk")
+        await app.protection.scan()
+        let dangers = app.protection.newDangers
+        if !dangers.isEmpty {
+            let content = UNMutableNotificationContent()
+            content.title = "MacCleaner: controlla la Protezione"
+            content.body = dangers.count == 1 ? "Nuovo pericolo: \(dangers[0].title)" : "\(dangers.count) nuovi pericoli, il primo: \(dangers[0].title)"
+            content.sound = .default
+            try? await UNUserNotificationCenter.current().add(
+                UNNotificationRequest(identifier: "auto-protection", content: content, trigger: nil))
+        }
         let size = app.modules["system-junk"]?.report?.allItems.filter(\.autoSelect).reduce(Int64(0)) { $0 + $1.size } ?? 0
         guard size > 500_000_000 else { return }
         let content = UNMutableNotificationContent()

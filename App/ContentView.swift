@@ -42,6 +42,8 @@ struct ContentView: View {
                 PerformanceView()
             case .protection?:
                 ProtectionView()
+            case .activity?:
+                ActivityView()
             case nil:
                 ContentUnavailableView("Scegli una funzione", systemImage: "sparkles")
             }

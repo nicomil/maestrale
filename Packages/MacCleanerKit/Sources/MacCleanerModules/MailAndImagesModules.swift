@@ -146,7 +146,7 @@ public struct InstallersModule: CleanerModule {
 
     /// True unless `hdiutil` says plainly that the image is not encrypted.
     static func isEncryptedImage(_ url: URL) -> Bool {
-        !MalwareScanner.run("/usr/bin/hdiutil", ["isencrypted", url.path]).contains("encrypted: NO")
+        !SystemCommands().run("/usr/bin/hdiutil", ["isencrypted", url.path]).contains("encrypted: NO")
     }
 
     /// "Visual Studio Code" and "VSCode-darwin-arm64" both start with letters only, lowercased.
@@ -155,7 +155,7 @@ public struct InstallersModule: CleanerModule {
     }
 
     static func mountedImagePaths() -> Set<String> {
-        let output = MalwareScanner.run("/usr/bin/hdiutil", ["info"])
+        let output = SystemCommands().run("/usr/bin/hdiutil", ["info"])
         return Set(output.components(separatedBy: "\n").compactMap { line in
             line.hasPrefix("image-path") ? line.components(separatedBy: ": ").dropFirst().joined(separator: ": ")
                 .trimmingCharacters(in: .whitespaces) : nil

@@ -24,7 +24,7 @@ open build/DerivedData/Build/Products/Debug/MacCleaner.app
 
 # Prova delle scansioni da Terminale (sola lettura, non rimuove nulla)
 cd Packages/MacCleanerKit && swift build -c release --product mccli
-.build/release/mccli junk|trash|large|duplicates|similar|orphans|apps|updates|privacy|launch|mail|installers|malware
+.build/release/mccli junk|trash|large|duplicates|similar|orphans|apps|updates|privacy|launch|mail|installers|malware|posture|processes|signatures
 ```
 
 ## Sicurezza
@@ -40,6 +40,9 @@ cd Packages/MacCleanerKit && swift build -c release --product mccli
 - Pulizia sistema: le cache di un'app aperta sono escluse, anche quando stanno nel suo container (`~/Library/Containers/<id>/…`) o in cartelle come `<id>.ShipIt`. Il controllo è ripetuto subito prima della pulizia.
 - Elementi di avvio: gli agenti, anche quelli in `/Library/LaunchAgents`, vengono fermati nella sessione dell'utente; i servizi di sistema con la password. Il plist va nel Cestino solo dopo aver verificato che launchd non lo abbia più caricato; altrimenti viene mostrato un errore e il plist resta al suo posto.
 - Protezione: l'origine di un'estensione dei browser Chromium si basa su ciò che il browser ha registrato nelle preferenze del profilo, non sull'`update_url` del manifest, che chiunque può scrivere.
+- Protezione (M7, vedi `docs/spec/protection-upgrade.md`): la scansione standard non chiede mai la password. Il "Controllo approfondito" esegue una sola operazione privilegiata di sola lettura (`AdminOperation.collectSystemEvidence`), con un elenco fisso di comandi senza argomenti dall'esterno. Tutto ciò che viene letto (plist, manifest, script, output dei comandi, regole YARA) è trattato come dato: parsato con limiti di dimensione, mai eseguito.
+- Quarantena: i file sospetti non vanno nel Cestino ma in `~/Library/Application Support/MacCleaner/Quarantine/<id>/`, spostati con le stesse operazioni relative al descrittore del helper (`PinnedFileSystem`), con tutti i permessi tolti e l'attributo di quarantena aggiunto. I file di sistema finiscono in `/Library/Application Support/MacCleaner/Quarantine` tramite `mchelper`. Ripristino ed eliminazione passano dalle stesse operazioni.
+- Regole YARA e liste di hash: l'app non scarica nulla. L'utente aggiunge i file dalle Impostazioni, vede lo SHA-256 per confrontarlo con quello pubblicato, e un file di regole che non compila viene rifiutato. libyara (4.5.4, BSD-3) è compilata nel pacchetto senza OpenSSL e senza scansione dei processi.
 
 ## Accesso completo al disco
 Molte cartelle (Safari, profili dei browser, dati di altre app) sono leggibili solo con l'Accesso completo al disco: Impostazioni di Sistema → Privacy e sicurezza → Accesso completo al disco → aggiungi MacCleaner. Con la firma ad-hoc macOS può dimenticare il permesso a ogni nuova build: se i risultati spariscono, toglilo e rimettilo.

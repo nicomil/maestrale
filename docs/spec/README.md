@@ -30,4 +30,5 @@ Queste specifiche descrivono **cosa** fa CleanMyMac 5, modulo per modulo, così 
 | `performance.md` | Login item, launch agent, manutenzione |
 | `malware.md` | Tipi di regole e categorie di rilevamento |
 | `helper.md` | Operazioni privilegiate |
+| `protection-upgrade.md` | Piano M7: persistenza completa, processi e risorse, YARA, postura, quarantena |
 | `dynamic-capture.md` | Procedura di cattura dinamica |
