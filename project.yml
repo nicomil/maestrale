@@ -48,6 +48,12 @@ targets:
         CODE_SIGN_STYLE: Manual
         GENERATE_INFOPLIST_FILE: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+      configs:
+        # Xcode skips the hardened runtime when signing ad-hoc: ask codesign for
+        # it. Release only: in Debug the app loads its own debug dylib and the
+        # test bundle, which an ad-hoc hardened process refuses.
+        Release:
+          OTHER_CODE_SIGN_FLAGS: "--options=runtime"
 
   # The only code that touches system files as root. AdminRunner copies it to a
   # root-only folder, checks its hash and runs it after the password prompt.
@@ -62,6 +68,8 @@ targets:
       base:
         PRODUCT_NAME: mchelper
         ENABLE_HARDENED_RUNTIME: YES
+        # The helper loads no libraries of its own, so it can always run hardened.
+        OTHER_CODE_SIGN_FLAGS: "--options=runtime"
         CODE_SIGN_IDENTITY: "-"
         CODE_SIGN_STYLE: Manual
         SKIP_INSTALL: YES
