@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import MacCleanerCore
 
@@ -40,6 +41,9 @@ public enum AdminError: Error, Equatable, Sendable {
     case refused(String)
     case cancelled
     case failed(String)
+    /// The helper ran, but some items could not be handled. `done` holds the
+    /// paths that were (as `AdminRunner.helperPath(of:)` writes them).
+    case itemsFailed(done: [String], failed: [String])
 }
 
 /// Runs an `AdminOperation` with a single macOS administrator password prompt.
@@ -47,18 +51,26 @@ public enum AdminError: Error, Equatable, Sendable {
 /// Paths are validated before anything runs (inside `systemRoots`, not SIP
 /// protected, symlinks resolved) and every argument is shell-quoted, so a
 /// file name cannot inject commands.
+///
+/// Files are never touched by `rm` or `mv` with full paths: the password prompt
+/// can stay open for a while, and a folder swapped for a symlink meanwhile
+/// would send them elsewhere. Instead the root shell runs `mchelper`, which
+/// opens each folder without following symlinks and works relative to it (see
+/// `PinnedFileSystem`). The helper is first copied into a new folder only root
+/// can write to and checked against the SHA-256 the app computed, so it cannot
+/// be swapped between the check and the run.
 public struct AdminRunner: Sendable {
-    public static let systemRoots: [URL] = [
-        "/Library/Caches", "/Library/Logs", "/private/var/log", "/Library/LaunchAgents", "/Library/LaunchDaemons",
-        "/Library/PrivilegedHelperTools", "/Library/Application Support", "/Library/Preferences",
-        "/Library/Audio/Plug-Ins", "/Library/Internet Plug-Ins", "/Library/PreferencePanes",
-        "/Library/Screen Savers", "/Library/QuickLook", "/Library/Spotlight", "/Applications", "/Users/Deleted Users",
-    ].map { URL(fileURLWithPath: $0) }
+    public static let systemRoots: [URL] = SystemRoots.paths.map { URL(fileURLWithPath: $0) }
+
+    /// The helper inside the app bundle (Contents/MacOS/mchelper).
+    public static var bundledHelper: URL? { Bundle.main.url(forAuxiliaryExecutable: "mchelper") }
 
     public let log: OperationLog?
+    public let helper: URL?
 
-    public init(log: OperationLog? = .standard) {
+    public init(log: OperationLog? = .standard, helper: URL? = AdminRunner.bundledHelper) {
         self.log = log
+        self.helper = helper
     }
 
     /// The shell command for an operation, or an error if it is not allowed.
@@ -69,24 +81,15 @@ public struct AdminRunner: Sendable {
         switch operation {
         case .remove(let urls):
             try Self.validateSystemItems(urls)
-            return try urls.map { url in
-                try Self.insideFolder(of: url) { "/bin/rm -rf -- \($0)" }
-            }.joined(separator: " && ")
+            return try helperCommand(["remove"] + Self.helperItems(urls))
         case .moveToTrash(let urls):
             try Self.validateSystemItems(urls)
             guard (try? trash.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true,
                   let realTrash = Self.realPath(trash) else {
                 throw AdminError.refused("Cestino non trovato: \(trash.path)")
             }
-            let quotedTrash = Self.shellQuote(realTrash)
-            // `mv -n` never overwrites; names are made unique beforehand so nothing in the Trash is replaced.
-            // Right before each move the Trash is checked again, and afterwards the item must be gone.
-            return try Self.trashDestinations(urls, trash: URL(fileURLWithPath: realTrash)).map { pair in
-                try Self.insideFolder(of: pair.source) { item in
-                    "[ \"$(cd -P -- \(quotedTrash) && pwd -P)\" = \(quotedTrash) ] && /bin/mv -n -- \(item) "
-                        + "\(Self.shellQuote(pair.destination.path)) && [ ! -e \(item) ] && [ ! -L \(item) ]"
-                }
-            }.joined(separator: " && ")
+            // The helper picks "name 2", "name 3"… itself, so nothing in the Trash is replaced.
+            return try helperCommand(["trash", realTrash, String(uid)] + Self.helperItems(urls))
         case .freeRAM:
             return "/usr/sbin/purge"
         case .flushDNS:
@@ -107,7 +110,7 @@ public struct AdminRunner: Sendable {
             return "/bin/launchctl bootout system/\(label)"
         case .removeDaemon(let label, let plist):
             try Self.validateLabel(label)
-            guard plist.deletingLastPathComponent().resolvingSymlinksInPath().path == "/Library/LaunchDaemons" else {
+            guard Self.realPath(plist.deletingLastPathComponent()) == "/Library/LaunchDaemons" else {
                 throw AdminError.refused("\(plist.path): non è in /Library/LaunchDaemons")
             }
             // bootout fails when the daemon is not loaded: that is fine, what
@@ -119,33 +122,45 @@ public struct AdminRunner: Sendable {
         }
     }
 
+    /// Shell lines that run the helper as root: copy it where only root can
+    /// write, check its hash, run it, clean up.
+    func helperCommand(_ arguments: [String]) throws -> String {
+        guard let helper, let data = try? Data(contentsOf: helper) else {
+            throw AdminError.refused("helper per le operazioni di sistema non trovato")
+        }
+        let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        let copy = "\"$H/mchelper\""
+        return "H=$(/usr/bin/mktemp -d /private/tmp/maccleaner-helper.XXXXXX) || exit 1; "
+            + "if /bin/cp -- \(Self.shellQuote(helper.path)) \(copy) "
+            + "&& [ \"$(/usr/bin/openssl dgst -sha256 -r \(copy) | /usr/bin/cut -c1-64)\" = '\(hash)' ]; "
+            + "then \(copy) \(arguments.map(Self.shellQuote).joined(separator: " ")); rc=$?; "
+            + "else echo 'helper modificato dopo il controllo' >&2; rc=1; fi; "
+            + "/bin/rm -rf \"$H\"; exit $rc"
+    }
+
+    /// "<folder> <name>" pairs for the helper, with the folder's canonical path.
+    static func helperItems(_ urls: [URL]) throws -> [String] {
+        try urls.flatMap { url -> [String] in
+            guard let folder = realPath(url.deletingLastPathComponent()) else {
+                throw AdminError.refused("\(url.path): cartella non trovata")
+            }
+            return [folder, url.lastPathComponent]
+        }
+    }
+
+    /// The path the helper reports for an item: its canonical folder plus its name.
+    public static func helperPath(of url: URL) -> String? {
+        realPath(url.deletingLastPathComponent()).map { "\($0)/\(url.lastPathComponent)" }
+    }
+
     static func validateLabel(_ label: String) throws {
         guard label.range(of: #"^[A-Za-z0-9._-]+$"#, options: .regularExpression) != nil else {
             throw AdminError.refused("label non valida")
         }
     }
 
-    /// Shell steps that act on one item from inside its folder.
-    ///
-    /// Paths are checked before the password prompt, and the prompt can stay
-    /// open for a while. If a folder on the way were swapped for a symlink in
-    /// the meantime, a full path would lead somewhere else. So the root shell
-    /// enters the folder, checks that it is still the one validated, and then
-    /// works on "./name": once inside, later swaps of the path no longer matter,
-    /// and `rm` and `mv` never follow a symlink in the last component.
-    static func insideFolder(of url: URL, _ action: (String) -> String) throws -> String {
-        guard let parent = realPath(url.deletingLastPathComponent()) else {
-            throw AdminError.refused("\(url.path): cartella non trovata")
-        }
-        let folder = shellQuote(parent)
-        let item = shellQuote("./" + url.lastPathComponent)
-        return "( cd -P -- \(folder) && [ \"$(pwd -P)\" = \(folder) ] "
-            + "|| { echo \(shellQuote("cartella cambiata dopo il controllo: \(parent)")) >&2; exit 1; }; "
-            + "\(action(item)) )"
-    }
-
-    /// The path with every symlink resolved, as the shell's `pwd -P` prints it
-    /// (unlike `resolvingSymlinksInPath`, this keeps "/private").
+    /// The path with every symlink resolved (unlike `resolvingSymlinksInPath`,
+    /// this keeps "/private", as the helper expects).
     static func realPath(_ url: URL) -> String? {
         guard let resolved = realpath(url.path, nil) else { return nil }
         defer { free(resolved) }
@@ -157,47 +172,49 @@ public struct AdminRunner: Sendable {
         let validator = SafeRemover(allowedRoots: systemRoots, mode: .dryRun, log: nil)
         for url in urls {
             if let error = validator.validate(url) { throw AdminError.refused("\(url.path): \(error)") }
-        }
-    }
-
-    /// Where each item lands in the Trash: its own name, or "name 2", "name 3"…
-    /// when that name is already taken (in the Trash or earlier in the batch).
-    static func trashDestinations(_ urls: [URL], trash: URL) -> [(source: URL, destination: URL)] {
-        var taken: Set<String> = []
-        return urls.map { url in
-            let ext = url.pathExtension
-            let stem = ext.isEmpty ? url.lastPathComponent : url.deletingPathExtension().lastPathComponent
-            var name = url.lastPathComponent
-            var counter = 2
-            while taken.contains(name.lowercased())
-                    || FileManager.default.fileExists(atPath: trash.appendingPathComponent(name).path) {
-                name = ext.isEmpty ? "\(stem) \(counter)" : "\(stem) \(counter).\(ext)"
-                counter += 1
+            guard PinnedFileSystem.isPlainName(url.lastPathComponent) else {
+                throw AdminError.refused("\(url.path): nome non valido")
             }
-            taken.insert(name.lowercased())
-            return (url, trash.appendingPathComponent(name))
         }
     }
 
     /// Asks for the password and runs the operation. Blocks until done.
+    /// Throws `itemsFailed` when the helper could not handle every item.
     public func run(_ operation: AdminOperation) throws {
         let shell = try command(for: operation)
         let script = "do shell script \(Self.appleScriptString(shell)) with administrator privileges "
-            + "with prompt \(Self.appleScriptString("MacCleaner: \(operation.title)"))"
+            + "with prompt \(Self.appleScriptString("MacCleaner: \(operation.title)")) without altering line endings"
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         process.arguments = ["-e", script]
+        let output = Pipe()
         let errors = Pipe()
+        process.standardOutput = output
         process.standardError = errors
-        process.standardOutput = FileHandle.nullDevice
         try process.run()
+        let report = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
         process.waitUntilExit()
         let message = String(data: errors.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        log?.recordAdmin(operation.title, ok: process.terminationStatus == 0, detail: shell)
+        let (done, failed) = Self.parseHelperReport(report)
+        log?.recordAdmin(operation.title, ok: process.terminationStatus == 0 && failed.isEmpty,
+                         detail: ([shell] + failed).joined(separator: " | "))
         guard process.terminationStatus == 0 else {
             if message.contains("-128") { throw AdminError.cancelled }
             throw AdminError.failed(message.trimmingCharacters(in: .whitespacesAndNewlines))
         }
+        if !failed.isEmpty { throw AdminError.itemsFailed(done: done, failed: failed) }
+    }
+
+    /// Splits the helper's "ok"/"err" lines into handled paths and failures.
+    static func parseHelperReport(_ text: String) -> (done: [String], failed: [String]) {
+        var done: [String] = [], failed: [String] = []
+        for line in text.split(whereSeparator: \.isNewline) {
+            let fields = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
+            guard fields.count >= 2 else { continue }
+            if fields[0] == "ok" { done.append(fields[1]) }
+            if fields[0] == "err" { failed.append(fields.dropFirst().joined(separator: ": ")) }
+        }
+        return (done, failed)
     }
 
     /// Wraps a value in single quotes for /bin/sh, escaping inner quotes.

@@ -9,8 +9,12 @@ Le specifiche funzionali sono in `docs/spec/`, il piano completo in `docs/spec/R
 
 ## Comandi
 ```bash
-# Test della logica (regole, rimozione sicura)
+# Test della logica (regole, rimozione sicura, helper privilegiato)
 cd Packages/MacCleanerKit && DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
+
+# Test dell'app (Disinstallazione, Space Lens, duplicati), girano dentro l'app
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
+  -project MacCleaner.xcodeproj -scheme MacCleaner -derivedDataPath build/DerivedData test
 
 # Progetto Xcode e build dell'app
 xcodegen generate
@@ -28,7 +32,7 @@ cd Packages/MacCleanerKit && swift build -c release --product mccli
 - `SafeRemover` rimuove solo dentro le cartelle elencate in `AllowedRoots`, risolve i symlink prima del controllo e rifiuta i file protetti da SIP.
 - Ogni operazione è registrata in `~/Library/Logs/MacCleaner/operations.log`.
 - Le categorie ad alto rischio non sono mai preselezionate. Gli elementi di sistema chiedono la password di amministratore e accettano solo un elenco chiuso di operazioni (`AdminOperation`); anche loro seguono la modalità scelta e, con "Sposta nel Cestino", finiscono nel Cestino invece di essere eliminati.
-- I comandi eseguiti come amministratore entrano nella cartella dell'elemento, controllano che sia ancora quella verificata prima della richiesta della password e lavorano su `./nome`. Così uno scambio di cartelle con un symlink, mentre la finestra della password è aperta, non porta il comando altrove. Resta una finestra di pochi istanti solo sul controllo del Cestino di destinazione: per chiuderla del tutto servirebbe un helper privilegiato.
+- I file di sistema non sono mai toccati da `rm` o `mv` con percorsi completi. Dopo la password, la shell di root esegue `mchelper` (in `Contents/MacOS` dell'app), che apre ogni cartella partendo da `/` senza seguire symlink e poi elimina o sposta relativamente alla cartella aperta (`PinnedFileSystem`). Uno scambio di cartelle con un symlink mentre la finestra della password è aperta fa fallire l'operazione invece di portarla altrove. Nel Cestino un elemento esistente non viene mai sostituito ("nome 2", "nome 3"…). L'helper controlla da sé che ogni elemento sia dentro le cartelle di sistema consentite (`SystemRoots`) e non protetto da SIP, e non attraversa altri volumi. Prima di eseguirlo, la shell di root lo copia in una cartella nuova scrivibile solo da root e ne verifica lo SHA-256, così non può essere sostituito tra il controllo e l'esecuzione.
 - Prima di cancellare cronologia, cookie o password da un database di un browser, ne viene salvata una copia completa nel Cestino. La copia è creata da SQLite (`VACUUM INTO`), include le modifiche recenti ancora nel file `-wal` e viene riletta prima di toccare l'originale; se non riesce, la pulizia non parte. La lettura dei database vede anche le modifiche nel file `-wal`.
 - Duplicati: sono preselezionate solo le copie in Download, e prima della pulizia il programma ricontrolla che la copia che resta esista ancora e sia identica.
 - Disinstallazione: i dati delle app (Application Support, Containers, Group Containers) non sono mai preselezionati. Durante la disinstallazione la lista delle app è bloccata, i file da rimuovere sono fissati al momento della conferma e i risultati di una ricerca superata da un'altra selezione vengono scartati.

@@ -144,6 +144,10 @@ final class AppModel {
                                                  icon: icon)
     }
 
+    /// True inside the unit tests, which run in the app: scheduled cleanings
+    /// must not start there.
+    static let isRunningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+
     func startScheduler() {
         scheduler.start(self)
     }
@@ -281,6 +285,15 @@ final class AppModel {
                 try await Task.detached { try runner.run(operation) }.value
             }
             return (items.map { RemovalOutcome(url: $0.url, result: .success($0.size)) }, "")
+        } catch AdminError.itemsFailed(let done, let failed) {
+            // Some items were handled, some not: report each one as it went.
+            let handled = Set(done)
+            let outcomes = items.map { item in
+                AdminRunner.helperPath(of: item.url).map(handled.contains) == true
+                    ? RemovalOutcome(url: item.url, result: .success(item.size))
+                    : RemovalOutcome(url: item.url, result: .failure(.failed(failed.first ?? "non rimosso")))
+            }
+            return (outcomes, "")
         } catch AdminError.cancelled {
             return ([], " · password annullata, elementi di sistema non rimossi")
         } catch {

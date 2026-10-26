@@ -10,7 +10,7 @@ struct MacCleanerApp: App {
             ContentView()
                 .environment(model)
                 .frame(minWidth: 960, minHeight: 600)
-                .task { model.startScheduler() }
+                .task { if !AppModel.isRunningTests { model.startScheduler() } }
         }
         .defaultSize(width: 1180, height: 760)
 

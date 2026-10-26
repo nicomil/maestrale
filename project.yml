@@ -24,6 +24,12 @@ targets:
         product: MacCleanerCore
       - package: MacCleanerKit
         product: MacCleanerModules
+      # Privileged helper, next to the app's executable (Contents/MacOS/mchelper).
+      - target: mchelper
+        embed: true
+        codeSign: false
+        copy:
+          destination: executables
     info:
       path: App/Info.plist
       properties:
@@ -43,6 +49,39 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
 
+  # The only code that touches system files as root. AdminRunner copies it to a
+  # root-only folder, checks its hash and runs it after the password prompt.
+  mchelper:
+    type: tool
+    platform: macOS
+    sources: [Packages/MacCleanerKit/Sources/mchelper]
+    dependencies:
+      - package: MacCleanerKit
+        product: MacCleanerCore
+    settings:
+      base:
+        PRODUCT_NAME: mchelper
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        SKIP_INSTALL: YES
+
+  # Tests of the app's own logic (selection, scans). They run inside the app.
+  MacCleanerTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources: [AppTests]
+    dependencies:
+      - target: MacCleaner
+    settings:
+      base:
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/MacCleaner.app/Contents/MacOS/MacCleaner"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        PRODUCT_BUNDLE_IDENTIFIER: it.nico.maccleaner.tests
+
 schemes:
   MacCleaner:
     build:
@@ -50,5 +89,6 @@ schemes:
         MacCleaner: all
     test:
       targets:
+        - MacCleanerTests
         - package: MacCleanerKit/MacCleanerCoreTests
         - package: MacCleanerKit/MacCleanerModulesTests

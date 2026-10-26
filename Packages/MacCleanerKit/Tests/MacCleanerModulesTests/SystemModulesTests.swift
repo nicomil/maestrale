@@ -19,84 +19,82 @@ import Testing
         #expect(try runner.command(for: .freeRAM) == "/usr/sbin/purge")
     }
 
-    @Test func adminRemoveQuotesValidSystemPaths() throws {
-        // /Library/Caches always has some entry on a real Mac.
-        let entries = (try? FileManager.default.contentsOfDirectory(atPath: "/Library/Caches")) ?? []
-        guard let name = entries.first(where: {
-            FileManager.default.fileExists(atPath: "/Library/Caches/\($0)")
-                && !SafeRemover.isSystemProtected(URL(fileURLWithPath: "/Library/Caches/\($0)"))
-        }) else { return }
-        let command = try AdminRunner(log: nil).command(for: .remove([URL(fileURLWithPath: "/Library/Caches/\(name)")]))
-        #expect(command.hasPrefix("( cd -P -- '/Library/Caches' && [ \"$(pwd -P)\" = '/Library/Caches' ] "))
-        #expect(command.hasSuffix("/bin/rm -rf -- " + AdminRunner.shellQuote("./\(name)") + " )"))
+    /// A stand-in for mchelper: a script that prints its arguments.
+    func fakeHelper() throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("fake-helper-\(UUID().uuidString)")
+        try "#!/bin/sh\necho \"ran $*\"\n".write(to: url, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+        return url
     }
 
-    @Test func adminMoveToTrashKeepsItemsRestorable() throws {
+    func sh(_ command: String) throws -> (status: Int32, output: String) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", command]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        process.waitUntilExit()
+        return (process.terminationStatus, output)
+    }
+
+    func someSystemCache() -> URL? {
         let entries = (try? FileManager.default.contentsOfDirectory(atPath: "/Library/Caches")) ?? []
-        guard let name = entries.first(where: {
+        return entries.first(where: {
             FileManager.default.fileExists(atPath: "/Library/Caches/\($0)")
                 && !SafeRemover.isSystemProtected(URL(fileURLWithPath: "/Library/Caches/\($0)"))
-        }) else { return }
+                && PinnedFileSystem.isPlainName($0)
+        }).map { URL(fileURLWithPath: "/Library/Caches/\($0)") }
+    }
+
+    /// Files are handed to the helper as "<canonical folder> <name>", never as a
+    /// full path for rm or mv.
+    @Test func systemFilesGoThroughTheHelper() throws {
+        guard let source = someSystemCache() else { return }
+        let helper = try fakeHelper(); defer { try? FileManager.default.removeItem(at: helper) }
+        let runner = AdminRunner(log: nil, helper: helper)
+        let name = AdminRunner.shellQuote(source.lastPathComponent)
+
+        let remove = try runner.command(for: .remove([source]))
+        #expect(remove.contains("'remove' '/Library/Caches' \(name)"))
+        #expect(!remove.contains("/bin/rm -rf -- '/Library") && !remove.contains("/bin/mv"))
+
         let trash = FileManager.default.temporaryDirectory.appendingPathComponent("trash-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: trash) }
-        // A file with the same name already in the Trash must not be overwritten.
-        FileManager.default.createFile(atPath: trash.appendingPathComponent(name).path, contents: Data())
-
-        let source = URL(fileURLWithPath: "/Library/Caches/\(name)")
-        let command = try AdminRunner(log: nil).command(for: .moveToTrash([source]), trash: trash)
-        let ext = source.pathExtension
-        let renamed = ext.isEmpty ? "\(name) 2" : "\(source.deletingPathExtension().lastPathComponent) 2.\(ext)"
+        let move = try runner.command(for: .moveToTrash([source]), trash: trash)
         let realTrash = try #require(AdminRunner.realPath(trash))
-        #expect(command.contains("/bin/mv -n -- " + AdminRunner.shellQuote("./\(name)") + " "
-                + AdminRunner.shellQuote(realTrash + "/" + renamed)))
-        #expect(!command.contains("rm "))
+        #expect(move.contains("'trash' \(AdminRunner.shellQuote(realTrash)) '\(getuid())' '/Library/Caches' \(name)"))
 
+        #expect(throws: AdminError.self) { try runner.command(for: .moveToTrash([URL(fileURLWithPath: "/etc/hosts")]), trash: trash) }
         #expect(throws: AdminError.self) {
-            try AdminRunner(log: nil).command(for: .moveToTrash([URL(fileURLWithPath: "/etc/hosts")]), trash: trash)
+            try runner.command(for: .moveToTrash([source]), trash: trash.appendingPathComponent("missing"))
         }
-        #expect(throws: AdminError.self) {
-            try AdminRunner(log: nil).command(for: .moveToTrash([source]), trash: trash.appendingPathComponent("missing"))
-        }
+        // Without the helper nothing is run as root.
+        #expect(throws: AdminError.self) { try AdminRunner(log: nil, helper: nil).command(for: .remove([source])) }
     }
 
-    /// The folder of an item is swapped for a symlink between the check and the
-    /// command (while the password prompt is open): nothing outside is touched.
-    @Test func folderSwappedAfterTheCheckIsRefused() throws {
-        let base = FileManager.default.temporaryDirectory.appendingPathComponent("swap-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: base) }
-        let folder = base.appendingPathComponent("Caches/vendor")
-        let elsewhere = base.appendingPathComponent("Precious")
-        for dir in [folder, elsewhere] { try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true) }
-        FileManager.default.createFile(atPath: folder.appendingPathComponent("junk").path, contents: Data())
-        let precious = elsewhere.appendingPathComponent("junk")
-        FileManager.default.createFile(atPath: precious.path, contents: Data("keep".utf8))
+    /// The helper is copied where only the caller can write and checked against
+    /// the hash taken when the command was built: a swapped helper never runs.
+    @Test func swappedHelperNeverRuns() throws {
+        let helper = try fakeHelper(); defer { try? FileManager.default.removeItem(at: helper) }
+        let command = try AdminRunner(log: nil, helper: helper).helperCommand(["remove", "/Library/Caches", "x y"])
+        let first = try sh(command)
+        #expect(first.status == 0)
+        #expect(first.output == "ran remove /Library/Caches x y\n")
 
-        let item = folder.appendingPathComponent("junk")
-        let remove = try AdminRunner.insideFolder(of: item) { "/bin/rm -rf -- \($0)" }
-        // The swap.
-        try FileManager.default.moveItem(at: folder, to: base.appendingPathComponent("Caches/vendor-old"))
-        try FileManager.default.createSymbolicLink(at: folder, withDestinationURL: elsewhere)
+        try "#!/bin/sh\necho evil\n".write(to: helper, atomically: true, encoding: .utf8)
+        let second = try sh(command)
+        #expect(second.status != 0)
+        #expect(!second.output.contains("evil"))
+    }
 
-        let shell = Process()
-        shell.executableURL = URL(fileURLWithPath: "/bin/sh")
-        shell.arguments = ["-c", remove]
-        shell.standardError = FileHandle.nullDevice
-        try shell.run()
-        shell.waitUntilExit()
-        #expect(shell.terminationStatus != 0)
-        #expect(FileManager.default.fileExists(atPath: precious.path))
-
-        // Without the swap the same command works.
-        try FileManager.default.removeItem(at: folder)
-        try FileManager.default.moveItem(at: base.appendingPathComponent("Caches/vendor-old"), to: folder)
-        let again = Process()
-        again.executableURL = URL(fileURLWithPath: "/bin/sh")
-        again.arguments = ["-c", remove]
-        try again.run()
-        again.waitUntilExit()
-        #expect(again.terminationStatus == 0)
-        #expect(!FileManager.default.fileExists(atPath: item.path))
+    @Test func helperReportIsParsed() {
+        let (done, failed) = AdminRunner.parseHelperReport("ok\t/a/b\t/t/b 2\nerr\t/a/c\tprotetto da SIP\nok\t/a/d\n")
+        #expect(done == ["/a/b", "/a/d"])
+        #expect(failed == ["/a/c: protetto da SIP"])
     }
 
     /// Agents in /Library/LaunchAgents run in the user's session, not in "system".
@@ -112,13 +110,14 @@ import Testing
         #expect(LaunchItemsScanner().isLoaded(item(.userAgent)) == false)
 
         // A daemon's plist is moved only after launchd let it go.
-        let runner = AdminRunner(log: nil)
+        let helper = try fakeHelper(); defer { try? FileManager.default.removeItem(at: helper) }
+        let runner = AdminRunner(log: nil, helper: helper)
         let daemons = (try? FileManager.default.contentsOfDirectory(atPath: "/Library/LaunchDaemons")) ?? []
         if let name = daemons.first(where: { $0.hasSuffix(".plist") }) {
             let command = try runner.command(for: .removeDaemon(label: "com.vendor.d",
                                                                 plist: URL(fileURLWithPath: "/Library/LaunchDaemons/\(name)")))
             let stop = try #require(command.range(of: "launchctl print system/com.vendor.d"))
-            let move = try #require(command.range(of: "/bin/mv -n"))
+            let move = try #require(command.range(of: "'trash'"))
             #expect(stop.lowerBound < move.lowerBound)
         }
         #expect(throws: AdminError.self) {
@@ -127,14 +126,6 @@ import Testing
         #expect(throws: AdminError.self) {
             try runner.command(for: .removeDaemon(label: "x; reboot", plist: URL(fileURLWithPath: "/Library/LaunchDaemons/x.plist")))
         }
-    }
-
-    @Test func trashDestinationsAreUniqueWithinABatch() {
-        let trash = URL(fileURLWithPath: "/nonexistent-trash")
-        let names = AdminRunner.trashDestinations(
-            [URL(fileURLWithPath: "/Library/Logs/a.log"), URL(fileURLWithPath: "/private/var/log/a.log"),
-             URL(fileURLWithPath: "/Library/Caches/dir")], trash: trash).map(\.destination.lastPathComponent)
-        #expect(names == ["a.log", "a 2.log", "dir"])
     }
 
     func makeDB(_ url: URL, _ statements: [String]) throws {

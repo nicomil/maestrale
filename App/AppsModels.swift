@@ -23,6 +23,10 @@ final class UninstallerModel {
     var fileSelection: Set<URL> = []
     var isWorking = false
     var message: String?
+    /// Finds an app's leftovers; replaced in tests.
+    var findLeftovers: @Sendable (InstalledApp, Set<String>) -> [ScanItem] = { app, otherIDs in
+        LeftoverFinder().leftovers(for: .init(app: app), otherAppIDs: otherIDs)
+    }
 
     var visibleApps: [InstalledApp] {
         let filtered = search.isEmpty ? apps : apps.filter {
@@ -57,9 +61,8 @@ final class UninstallerModel {
         message = nil
         guard let app else { return }
         let otherIDs = Set(apps.filter { $0.url != app.url }.flatMap { [$0.bundleID] + $0.embeddedBundleIDs })
-        let leftovers = await Task.detached {
-            LeftoverFinder().leftovers(for: .init(app: app), otherAppIDs: otherIDs)
-        }.value
+        let find = findLeftovers
+        let leftovers = await Task.detached { find(app, otherIDs) }.value
         // Another app was chosen in the meantime: these files belong to the old one.
         guard generation == selectionGeneration, selectedApp?.url == app.url else { return }
         let bundle = ScanItem(url: app.url, size: app.size, risk: .medium, autoSelect: true,
