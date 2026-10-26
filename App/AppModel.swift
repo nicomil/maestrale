@@ -198,20 +198,48 @@ final class AppModel {
     }
 
     func clean(_ id: String) async {
-        guard let module = modules[id]?.module, fullySelectedCopyGroups(in: id).isEmpty else { return }
-        let items = selectedItems(in: id)
+        guard let module = modules[id]?.module, let report = modules[id]?.report,
+              fullySelectedCopyGroups(in: id).isEmpty else { return }
+        var items = selectedItems(in: id)
         guard !items.isEmpty else { return }
+        // Mail rewrites its folders while it is open.
+        if id == "mail-attachments", PrivacyScanner.isRunning("com.apple.mail") {
+            modules[id]?.error = "Chiudi Mail e riprova."
+            return
+        }
+        modules[id]?.error = nil
         isCleaning = true
         let mode = removalMode
+        // Files may have changed since the scan: a group of copies is skipped
+        // unless a copy that stays is still there (and, for duplicates, identical).
+        let selectedURLs = Set(items.map(\.url))
+        let changed = await Task.detached {
+            Self.changedCopyGroups(report, selected: selectedURLs, identical: id == "duplicates")
+        }.value
+        items.removeAll { changed.urls.contains($0.url) }
+        // An app opened after the scan: its caches stay until it is closed.
+        var skippedRunning = 0
+        if id == SystemJunkModule.id {
+            let running = SystemJunkModule.runningBundleIdentifiers()
+            let before = items.count
+            items.removeAll { RuleEngine.isProtected($0.url, by: running) }
+            skippedRunning = before - items.count
+        }
         let remover = SafeRemover(allowedRoots: module.allowedRoots, mode: mode)
         let userItems = items.filter { !$0.needsHelper }
         let adminItems = items.filter(\.needsHelper)
         var outcomes = await Task.detached { remover.remove(userItems.map(\.url)) }.value
         var adminNote = ""
         if !adminItems.isEmpty {
-            let result = await Self.removeAsAdmin(adminItems, dryRun: mode == .dryRun)
+            let result = await Self.removeAsAdmin(adminItems, mode: mode)
             outcomes += result.outcomes
             adminNote = result.note
+        }
+        if changed.groups > 0 {
+            adminNote += " · \(changed.groups) gruppi saltati perché cambiati dopo la scansione"
+        }
+        if skippedRunning > 0 {
+            adminNote += " · \(skippedRunning) elementi saltati perché la loro app è aperta"
         }
         let outcome = CleanOutcome(summary: Self.summary(outcomes, mode: mode) + adminNote, mode: mode)
         isCleaning = false
@@ -219,16 +247,38 @@ final class AppModel {
         modules[id]?.lastClean = outcome
     }
 
-    /// Removes system items with one administrator password prompt.
-    /// They are deleted (not trashed): only caches and logs that the system recreates qualify.
-    static func removeAsAdmin(_ items: [ScanItem], dryRun: Bool) async -> (outcomes: [RemovalOutcome], note: String) {
+    /// Selected items of copy groups that are no longer safe to clean.
+    nonisolated static func changedCopyGroups(_ report: ScanReport, selected: Set<URL>,
+                                              identical: Bool) -> (urls: Set<URL>, groups: Int) {
+        var urls: Set<URL> = []
+        var groups = 0
+        for category in report.categories where category.keep != nil {
+            let chosen = category.items.map(\.url).filter(selected.contains)
+            guard !chosen.isEmpty else { continue }
+            let staying = category.items.map(\.url).filter { !selected.contains($0) }
+            let safe = staying.contains { stay in
+                FileManager.default.fileExists(atPath: stay.path)
+                    && (!identical || DuplicatesModule.stillDuplicates(chosen, of: stay))
+            }
+            if !safe {
+                urls.formUnion(chosen)
+                groups += 1
+            }
+        }
+        return (urls, groups)
+    }
+
+    /// Removes system items with one administrator password prompt, following
+    /// the chosen mode: to the Trash (restorable), deleted, or only checked.
+    static func removeAsAdmin(_ items: [ScanItem], mode: RemovalMode) async -> (outcomes: [RemovalOutcome], note: String) {
         let urls = items.map(\.url)
         let runner = AdminRunner()
+        let operation: AdminOperation = mode == .delete ? .remove(urls) : .moveToTrash(urls)
         do {
-            if dryRun {
-                _ = try runner.command(for: .remove(urls))
+            if mode == .dryRun {
+                _ = try runner.command(for: operation)
             } else {
-                try await Task.detached { try runner.run(.remove(urls)) }.value
+                try await Task.detached { try runner.run(operation) }.value
             }
             return (items.map { RemovalOutcome(url: $0.url, result: .success($0.size)) }, "")
         } catch AdminError.cancelled {
@@ -265,12 +315,20 @@ final class SpaceLensModel {
 
     var allowedRoots: [URL] { AllowedRoots.userFiles() + AllowedRoots.user() }
 
+    /// Bumped on every scan and cancel: an older scan that is still winding
+    /// down must not touch the screen.
+    private var scanGeneration = 0
+
     func scan(_ url: URL) {
         scanTask?.cancel()
+        scanGeneration += 1
+        let generation = scanGeneration
         isScanning = true
         root = nil
         path = []
         selection = []
+        scannedFiles = 0
+        scannedBytes = 0
         let counter = ScanCounter()
         scanTask = Task {
             // Keeps App Nap from throttling the scan and the progress label
@@ -279,24 +337,29 @@ final class SpaceLensModel {
                 options: [.userInitiated, .idleSystemSleepDisabled], reason: "Space Lens")
             defer { ProcessInfo.processInfo.endActivity(activity) }
             let progress = Task {
-                while !Task.isCancelled {
+                while !Task.isCancelled, generation == scanGeneration {
                     let snap = counter.snapshot
                     scannedFiles = snap.files
                     scannedBytes = snap.bytes
                     try? await Task.sleep(for: .milliseconds(200))
                 }
             }
-            let node = await Task.detached(priority: .userInitiated) {
+            // A detached task does not inherit cancellation: pass it on, so
+            // Cancel really stops the walk instead of letting it run on.
+            let work = Task.detached(priority: .userInitiated) {
                 await SpaceLensScanner().scan(url, counter: counter)
-            }.value
+            }
+            let node = await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
             progress.cancel()
-            if !Task.isCancelled { root = node }
+            guard generation == scanGeneration, !Task.isCancelled else { return }
+            root = node
             isScanning = false
         }
     }
 
     func cancel() {
         scanTask?.cancel()
+        scanGeneration += 1
         isScanning = false
     }
 

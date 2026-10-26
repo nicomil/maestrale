@@ -7,7 +7,8 @@ import MacCleanerCore
 /// Files are grouped by size, then by a hash of their first and last 64 KB,
 /// and only the remaining candidates get a full SHA-256. Hard links of the
 /// same file are not duplicates. In each group one copy is kept: the one not
-/// in Downloads, then the most recently modified.
+/// in Downloads, then the most recently modified. Only copies in Downloads are
+/// preselected: elsewhere a copy may belong to a project or a library.
 public struct DuplicatesModule: CleanerModule {
     public let id = "duplicates"
     public let title = "Duplicati"
@@ -47,7 +48,8 @@ public struct DuplicatesModule: CleanerModule {
             let keep = Self.copyToKeep(files, downloadsPrefix: downloads)
             let items = files.map { file in
                 let isKept = file.url == keep.url
-                return ScanItem(url: file.url, size: file.size, risk: .medium, autoSelect: !isKept,
+                let inDownloads = file.url.path.hasPrefix(downloads)
+                return ScanItem(url: file.url, size: file.size, risk: .medium, autoSelect: !isKept && inDownloads,
                                 needsHelper: false,
                                 detail: isKept ? "Copia da tenere" : file.url.deletingLastPathComponent().path)
             }
@@ -57,6 +59,13 @@ public struct DuplicatesModule: CleanerModule {
         }
         .sorted { $0.totalSize > $1.totalSize }
         return ScanReport(moduleID: id, categories: categories)
+    }
+
+    /// Checked again right before cleaning: the copy that stays must still
+    /// exist and still have the same content as every copy being removed.
+    public static func stillDuplicates(_ urls: [URL], of keep: URL) -> Bool {
+        guard let reference = fullHash(keep) else { return false }
+        return urls.allSatisfy { $0 != keep && fullHash($0) == reference }
     }
 
     static func copyToKeep(_ files: [FileRecord], downloadsPrefix: String) -> FileRecord {

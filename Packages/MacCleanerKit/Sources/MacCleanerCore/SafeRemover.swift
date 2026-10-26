@@ -48,6 +48,11 @@ public struct SafeRemover: Sendable {
     /// Checks a path without touching it.
     public func validate(_ url: URL) -> RemovalError? {
         let fm = FileManager.default
+        // "." and ".." are never valid: "root/sub/.." would pass the prefix
+        // check below while pointing at the root or above it. They are refused
+        // rather than collapsed, because collapsing them before resolving
+        // symlinks can point at a different folder than the one removed.
+        if url.pathComponents.contains(where: { $0 == "." || $0 == ".." }) { return .outsideAllowedRoots }
         // Resolve the parent, not the item: removing a symlink must remove the
         // link itself, but the link must live inside an allowed folder.
         let parent = url.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL

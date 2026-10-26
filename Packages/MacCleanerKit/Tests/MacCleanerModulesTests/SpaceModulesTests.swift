@@ -75,9 +75,19 @@ struct FakeHome {
         #expect(report.categories.count == 1)
         let items = try #require(report.categories.first?.items)
         #expect(items.count == 3)
-        #expect(items.filter { !$0.autoSelect }.count == 1)
-        let kept = try #require(items.first { !$0.autoSelect })
-        #expect(!kept.url.path.contains("/Downloads/"))
+        let keep = try #require(report.categories.first?.keep)
+        #expect(!keep.path.contains("/Downloads/"))
+        // Only the copy in Downloads is preselected; the one on the Desktop may be in use.
+        #expect(items.filter(\.autoSelect).map { $0.url.lastPathComponent } == ["report.pdf"])
+        #expect(items.filter(\.autoSelect).allSatisfy { $0.url.path.contains("/Downloads/") })
+
+        // Right before cleaning the group is checked again.
+        let others = items.map(\.url).filter { $0 != keep }
+        #expect(DuplicatesModule.stillDuplicates(others, of: keep))
+        try Data(repeating: 9, count: 10).write(to: keep) // the kept copy changed after the scan
+        #expect(!DuplicatesModule.stillDuplicates(others, of: keep))
+        try FileManager.default.removeItem(at: keep)       // or disappeared
+        #expect(!DuplicatesModule.stillDuplicates(others, of: keep))
     }
 
     @Test func similarImageClustering() {

@@ -129,6 +129,22 @@ public struct RuleEngine: Sendable {
             .appendingPathComponent(url.lastPathComponent).path
     }
 
+    /// True when any folder on the path, or the item itself, is named after
+    /// one of `names` (bundle identifiers of running apps): "com.foo" protects
+    /// ~/Library/Caches/com.foo, ~/Library/Containers/com.foo/… and its
+    /// subfolders, "group.com.foo", "TEAMID.com.foo" and "com.foo.ShipIt".
+    public static func isProtected(_ url: URL, by names: Set<String>) -> Bool {
+        guard !names.isEmpty else { return false }
+        return url.pathComponents.contains { component in
+            if names.contains(component) { return true }
+            // Only components that look like identifiers need the slower checks.
+            guard component.contains(".") else { return false }
+            return names.contains { name in
+                component.hasSuffix("." + name) || component.hasPrefix(name + ".")
+            }
+        }
+    }
+
     static func hasAncestor(_ path: String, in paths: Set<String>) -> Bool {
         var current = (path as NSString).deletingLastPathComponent
         while current.count > 1 {
@@ -140,7 +156,7 @@ public struct RuleEngine: Sendable {
 
     private func makeItem(_ url: URL, rule: CleaningRule, excludes: [String]) -> ScanItem? {
         let name = url.lastPathComponent
-        if name == ".DS_Store" || protectedNames.contains(name) { return nil }
+        if name == ".DS_Store" || Self.isProtected(url, by: protectedNames) { return nil }
         if excludes.contains(where: { Self.matches(name, pattern: $0) }) { return nil }
         if let days = rule.minAgeDays {
             let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate

@@ -53,7 +53,15 @@ public struct LeftoverFinder: Sendable {
         ]
     }
 
-    public func leftovers(for identity: Identity) -> [ScanItem] {
+    /// Places where apps keep the user's own data (documents, databases, notes):
+    /// never preselected, even when the name matches exactly.
+    static let dataPlaces: Set<String> = ["Application Support", "Containers", "Group Containers"]
+
+    /// `otherAppIDs` are the bundle identifiers of the other installed apps:
+    /// an entry that belongs to one of them more precisely (com.google.Chrome.canary
+    /// when uninstalling com.google.Chrome) is left alone.
+    public func leftovers(for identity: Identity, otherAppIDs: Set<String> = []) -> [ScanItem] {
+        let others = otherAppIDs.subtracting(identity.bundleIDs)
         var items: [ScanItem] = []
         for (relative, match, systemToo) in places {
             var roots = [home.appendingPathComponent("Library").appendingPathComponent(relative)]
@@ -61,18 +69,35 @@ public struct LeftoverFinder: Sendable {
             for root in roots {
                 let isSystem = !root.path.hasPrefix(home.path + "/")
                 for name in (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
-                where Self.matches(name, match: match, identity: identity) {
+                where Self.matches(name, match: match, identity: identity)
+                    && !Self.belongsToAnotherApp(name, identity: identity, others: others) {
                     let url = root.appendingPathComponent(name)
                     let exact = identity.bundleIDs.contains { name == $0 || name.hasPrefix($0 + ".") }
+                    let holdsData = Self.dataPlaces.contains(relative)
                     items.append(ScanItem(
                         url: url, size: FileSizer.allocatedSize(of: url),
-                        risk: exact ? .low : .medium, autoSelect: exact,
+                        risk: holdsData ? .high : exact ? .low : .medium, autoSelect: exact && !holdsData,
                         needsHelper: isSystem && !FileManager.default.isDeletableFile(atPath: url.path),
                         detail: url.deletingLastPathComponent().path.replacingOccurrences(of: home.path, with: "~")))
                 }
             }
         }
         return items
+    }
+
+    /// True when another installed app's identifier matches the name more
+    /// precisely than any identifier of the app being removed.
+    static func belongsToAnotherApp(_ name: String, identity: Identity, others: Set<String>) -> Bool {
+        guard !others.isEmpty else { return false }
+        var base = name.lowercased()
+        for suffix in [".plist", ".savedstate", ".binarycookies"] where base.hasSuffix(suffix) {
+            base.removeLast(suffix.count)
+        }
+        if let team = identity.teamID?.lowercased(), base.hasPrefix(team + ".") { base.removeFirst(team.count + 1) }
+        func longestMatch(_ ids: [String]) -> Int {
+            ids.map { $0.lowercased() }.filter { base == $0 || base.hasPrefix($0 + ".") }.map(\.count).max() ?? 0
+        }
+        return longestMatch(Array(others)) > longestMatch(identity.bundleIDs)
     }
 
     static func matches(_ name: String, match: Match, identity: Identity) -> Bool {

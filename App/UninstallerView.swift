@@ -28,10 +28,14 @@ struct UninstallerView: View {
                 } else {
                     List(uninstaller.visibleApps, selection: Binding(
                         get: { uninstaller.selectedApp?.url },
-                        set: { url in Task { await uninstaller.select(uninstaller.apps.first { $0.url == url }) } }
+                        set: { url in
+                            guard !uninstaller.isWorking else { return }
+                            Task { await uninstaller.select(uninstaller.apps.first { $0.url == url }) }
+                        }
                     )) { app in
                         AppRow(app: app).tag(app.url)
                     }
+                    .disabled(uninstaller.isWorking)
                 }
             }
             .frame(minWidth: 280, idealWidth: 320)

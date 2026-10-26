@@ -55,6 +55,22 @@ struct Sandbox {
         #expect(FileManager.default.fileExists(atPath: target.path))
     }
 
+    /// "allowed/sub/.." and "allowed/." name the root itself, "allowed/.." the
+    /// folder above it: none of them may pass, even with a trailing dot component.
+    @Test func refusesDotComponentsAtTheEnd() throws {
+        let box = try Sandbox(); defer { box.remove() }
+        let sub = box.allowed.appendingPathComponent("sub")
+        try box.file("sub/keep.txt", in: box.allowed)
+        let r = remover(box, .delete)
+        for sneaky in [sub.appendingPathComponent(".."), box.allowed.appendingPathComponent("."),
+                       box.allowed.appendingPathComponent(".."), sub.appendingPathComponent(".")] {
+            #expect(r.validate(sneaky) == .outsideAllowedRoots, "\(sneaky.path)")
+        }
+        _ = r.remove([sub.appendingPathComponent(".."), box.allowed.appendingPathComponent("..")])
+        #expect(FileManager.default.fileExists(atPath: box.allowed.path))
+        #expect(FileManager.default.fileExists(atPath: box.outside.path))
+    }
+
     @Test func refusesFolderReachedThroughSymlinkedParent() throws {
         let box = try Sandbox(); defer { box.remove() }
         let secret = try box.file("dir/secret.txt", in: box.outside)

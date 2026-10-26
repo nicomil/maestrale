@@ -86,37 +86,29 @@ final class PerformanceModel {
     }
 
     func toggle(_ item: LaunchItem) async {
-        if item.domain == .userAgent {
-            let enable = item.isDisabled
-            _ = await Task.detached { LaunchItemsScanner().setUserAgent(item, enabled: enable) }.value
-        } else if !item.isDisabled {
-            do {
-                try await Task.detached { try AdminRunner().run(.bootoutDaemon(label: item.label)) }.value
-            } catch {
-                message = "\(item.label): non fermato"
+        do {
+            if item.domain != .systemDaemon {
+                let enable = item.isDisabled
+                try await Task.detached { try LaunchItemsScanner().setAgent(item, enabled: enable) }.value
+            } else if !item.isDisabled {
+                try await Task.detached { try LaunchItemsScanner().stopDaemon(item) }.value
             }
+        } catch AdminError.cancelled {
+        } catch {
+            message = "\(item.label): non fermato (\(error))"
         }
         await scan()
     }
 
-    /// Moves a user agent's plist to the Trash, or deletes a system one with the password.
+    /// Stops a launch item, then moves its plist to the Trash (a system one with
+    /// the password). If it does not stop, nothing is moved.
     func remove(_ item: LaunchItem) async {
-        if item.domain == .userAgent {
-            _ = await Task.detached { LaunchItemsScanner().setUserAgent(item, enabled: false) }.value
-            let remover = SafeRemover(allowedRoots: AllowedRoots.appSupport(), mode: .trash)
-            let outcome = await Task.detached { remover.remove([item.plist]) }.value
-            message = AppModel.summary(outcome, mode: .trash)
-        } else {
-            do {
-                try await Task.detached {
-                    let runner = AdminRunner()
-                    try? runner.run(.bootoutDaemon(label: item.label))
-                    try runner.run(.remove([item.plist]))
-                }.value
-                message = "\(item.label) rimosso"
-            } catch {
-                message = "\(item.label): non rimosso"
-            }
+        do {
+            try await Task.detached { try LaunchItemsScanner().remove(item) }.value
+            message = "\(item.label) rimosso"
+        } catch AdminError.cancelled {
+        } catch {
+            message = "\(item.label): non rimosso (\(error))"
         }
         await scan()
     }

@@ -42,7 +42,35 @@ import Testing
         let finder = LeftoverFinder(home: home.url, systemLibrary: home.url.appendingPathComponent("NoSystem"))
         let item = try #require(finder.leftovers(for: .init(bundleIDs: ["com.acme.Editor"], name: "Editor", teamID: nil)).first)
         #expect(item.autoSelect == false)
-        #expect(item.risk == .medium)
+        #expect(item.risk == .high) // Application Support holds the app's data
+    }
+
+    @Test func appDataIsNeverPreselected() throws {
+        let home = try FakeHome(); defer { home.remove() }
+        let lib = "Library/"
+        try home.file(lib + "Application Support/com.acme.Notes/notes.db", bytes: 4096)
+        try home.file(lib + "Containers/com.acme.Notes/Data/Documents/a.txt", bytes: 4096)
+        try home.file(lib + "Group Containers/ABCDE12345.com.acme.Notes/x", bytes: 4096)
+        try home.file(lib + "Caches/com.acme.Notes/cache.bin", bytes: 4096)
+        let finder = LeftoverFinder(home: home.url, systemLibrary: home.url.appendingPathComponent("NoSystem"))
+        let items = finder.leftovers(for: .init(bundleIDs: ["com.acme.Notes"], name: "Notes", teamID: "ABCDE12345"))
+        let selected = items.filter(\.autoSelect).map { $0.url.deletingLastPathComponent().lastPathComponent }
+        #expect(selected == ["Caches"])
+        #expect(items.filter { $0.url.path.contains("/Containers/") || $0.url.path.contains("Application Support") }
+            .allSatisfy { $0.risk == .high })
+    }
+
+    @Test func filesOfSiblingAppsAreLeftAlone() throws {
+        let home = try FakeHome(); defer { home.remove() }
+        try home.file("Library/Preferences/com.google.Chrome.plist", bytes: 4096)
+        try home.file("Library/Preferences/com.google.Chrome.canary.plist", bytes: 4096)
+        try home.file("Library/Caches/com.google.Chrome.canary/x", bytes: 4096)
+        let finder = LeftoverFinder(home: home.url, systemLibrary: home.url.appendingPathComponent("NoSystem"))
+        let identity = LeftoverFinder.Identity(bundleIDs: ["com.google.Chrome"], name: "Google Chrome", teamID: nil)
+        let names = finder.leftovers(for: identity, otherAppIDs: ["com.google.Chrome.canary"]).map(\.url.lastPathComponent)
+        #expect(names == ["com.google.Chrome.plist"])
+        // Without the other app installed, its files still count as the app's.
+        #expect(finder.leftovers(for: identity).count == 3)
     }
 
     @Test func orphanDetectionHelpers() {

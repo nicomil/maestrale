@@ -195,6 +195,8 @@ public struct PrivacyScanner: Sendable {
         guard !dryRun else { return }
         switch item.action {
         case .sql(let url, let statements):
+            // SQL deletions cannot be undone: keep a copy in the Trash first.
+            do { try backupToTrash(url, for: item) } catch { throw PrivacyError.failed("copia di sicurezza di \(url.lastPathComponent)") }
             guard let db = SQLiteDB(url: url, readOnly: false) else { throw PrivacyError.failed("apertura di \(url.lastPathComponent)") }
             guard db.execute("BEGIN"), statements.allSatisfy({ db.execute($0) }), db.execute("COMMIT") else {
                 db.execute("ROLLBACK")
@@ -207,8 +209,39 @@ public struct PrivacyScanner: Sendable {
         OperationLog.standard.recordAdmin("privacy \(item.id)", ok: true, detail: "\(item.count)")
     }
 
+    /// Saves a standalone copy of a database into a folder in the Trash, e.g.
+    /// "MacCleaner, copia di Google Chrome Default History 2026-10-26 10.15.03".
+    /// The copy is made by SQLite itself and read back before anything is
+    /// deleted, so it holds the data even when the database is reached through
+    /// a symlink or has recent changes in its "-wal" file.
+    /// To restore, quit the browser, delete the "-wal" and "-shm" files next to
+    /// the original and copy the backup over it.
+    @discardableResult
+    func backupToTrash(_ db: URL, for item: PrivacyItem, now: Date = Date()) throws -> URL {
+        let fm = FileManager.default
+        let trash = home.appendingPathComponent(".Trash")
+        try fm.createDirectory(at: trash, withIntermediateDirectories: true)
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd HH.mm.ss"
+        let base = (["MacCleaner, copia di", item.owner, item.profile, db.lastPathComponent, formatter.string(from: now)]
+            .compactMap { $0 }.joined(separator: " ")).replacingOccurrences(of: "/", with: "-")
+        var folder = trash.appendingPathComponent(base)
+        var counter = 2
+        while fm.fileExists(atPath: folder.path) {
+            folder = trash.appendingPathComponent("\(base) \(counter)")
+            counter += 1
+        }
+        try fm.createDirectory(at: folder, withIntermediateDirectories: false)
+        guard let source = SQLiteDB(url: db, readOnly: true),
+              source.snapshot(to: folder.appendingPathComponent(db.lastPathComponent)) else {
+            throw PrivacyError.failed("copia di sicurezza di \(db.lastPathComponent)")
+        }
+        return folder
+    }
+
     @MainActor
-    static func isRunning(_ bundleID: String) -> Bool {
+    public static func isRunning(_ bundleID: String) -> Bool {
         !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty
     }
 }

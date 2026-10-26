@@ -4,8 +4,10 @@ import MacCleanerCore
 /// Operations that need administrator rights. The set is closed on purpose:
 /// nothing outside this enum can be run as root by the app.
 public enum AdminOperation: Sendable, Equatable {
-    /// Remove files under the system folders listed in `AdminRunner.systemRoots`.
+    /// Delete files under the system folders listed in `AdminRunner.systemRoots`.
     case remove([URL])
+    /// Move files under `AdminRunner.systemRoots` to the user's Trash, so they can be restored.
+    case moveToTrash([URL])
     case freeRAM
     case flushDNS
     case reindexSpotlight
@@ -14,10 +16,13 @@ public enum AdminOperation: Sendable, Equatable {
     case thinLocalSnapshots
     case removeWiFiNetwork(String)
     case bootoutDaemon(label: String)
+    /// Stop a daemon and, only if it stopped, move its plist (in /Library/LaunchDaemons) to the Trash.
+    case removeDaemon(label: String, plist: URL)
 
     public var title: String {
         switch self {
-        case .remove(let urls): "Rimozione di \(urls.count) elementi di sistema"
+        case .remove(let urls): "Eliminazione di \(urls.count) elementi di sistema"
+        case .moveToTrash(let urls): "Spostamento nel Cestino di \(urls.count) elementi di sistema"
         case .freeRAM: "Liberare la RAM"
         case .flushDNS: "Svuotare la cache DNS"
         case .reindexSpotlight: "Reindicizzare Spotlight"
@@ -26,6 +31,7 @@ public enum AdminOperation: Sendable, Equatable {
         case .thinLocalSnapshots: "Liberare lo spazio eliminabile"
         case .removeWiFiNetwork(let name): "Dimenticare la rete \(name)"
         case .bootoutDaemon(let label): "Fermare \(label)"
+        case .removeDaemon(let label, _): "Fermare e rimuovere \(label)"
         }
     }
 }
@@ -56,15 +62,31 @@ public struct AdminRunner: Sendable {
     }
 
     /// The shell command for an operation, or an error if it is not allowed.
-    public func command(for operation: AdminOperation, uid: uid_t = getuid()) throws -> String {
+    /// `trash` is the folder `moveToTrash` moves items into (the user's Trash by default).
+    public func command(for operation: AdminOperation, uid: uid_t = getuid(),
+                        trash: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash"))
+        throws -> String {
         switch operation {
         case .remove(let urls):
-            guard !urls.isEmpty else { throw AdminError.refused("nessun elemento") }
-            let validator = SafeRemover(allowedRoots: Self.systemRoots, mode: .dryRun, log: nil)
-            for url in urls {
-                if let error = validator.validate(url) { throw AdminError.refused("\(url.path): \(error)") }
+            try Self.validateSystemItems(urls)
+            return try urls.map { url in
+                try Self.insideFolder(of: url) { "/bin/rm -rf -- \($0)" }
+            }.joined(separator: " && ")
+        case .moveToTrash(let urls):
+            try Self.validateSystemItems(urls)
+            guard (try? trash.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true,
+                  let realTrash = Self.realPath(trash) else {
+                throw AdminError.refused("Cestino non trovato: \(trash.path)")
             }
-            return "/bin/rm -rf -- " + urls.map { Self.shellQuote($0.path) }.joined(separator: " ")
+            let quotedTrash = Self.shellQuote(realTrash)
+            // `mv -n` never overwrites; names are made unique beforehand so nothing in the Trash is replaced.
+            // Right before each move the Trash is checked again, and afterwards the item must be gone.
+            return try Self.trashDestinations(urls, trash: URL(fileURLWithPath: realTrash)).map { pair in
+                try Self.insideFolder(of: pair.source) { item in
+                    "[ \"$(cd -P -- \(quotedTrash) && pwd -P)\" = \(quotedTrash) ] && /bin/mv -n -- \(item) "
+                        + "\(Self.shellQuote(pair.destination.path)) && [ ! -e \(item) ] && [ ! -L \(item) ]"
+                }
+            }.joined(separator: " && ")
         case .freeRAM:
             return "/usr/sbin/purge"
         case .flushDNS:
@@ -81,10 +103,79 @@ public struct AdminRunner: Sendable {
             guard !name.isEmpty, name.count <= 64 else { throw AdminError.refused("nome rete non valido") }
             return "/usr/sbin/networksetup -removepreferredwirelessnetwork \(Self.wifiInterface()) \(Self.shellQuote(name))"
         case .bootoutDaemon(let label):
-            guard label.range(of: #"^[A-Za-z0-9._-]+$"#, options: .regularExpression) != nil else {
-                throw AdminError.refused("label non valida")
-            }
+            try Self.validateLabel(label)
             return "/bin/launchctl bootout system/\(label)"
+        case .removeDaemon(let label, let plist):
+            try Self.validateLabel(label)
+            guard plist.deletingLastPathComponent().resolvingSymlinksInPath().path == "/Library/LaunchDaemons" else {
+                throw AdminError.refused("\(plist.path): non è in /Library/LaunchDaemons")
+            }
+            // bootout fails when the daemon is not loaded: that is fine, what
+            // matters is that launchd no longer has it before the plist moves.
+            let stop = "/bin/launchctl bootout system/\(label) 2>/dev/null; "
+                + "if /bin/launchctl print system/\(label) >/dev/null 2>&1; then "
+                + "echo \(Self.shellQuote("\(label) è ancora in esecuzione")) >&2; exit 1; fi"
+            return "\(stop); " + (try command(for: .moveToTrash([plist]), uid: uid, trash: trash))
+        }
+    }
+
+    static func validateLabel(_ label: String) throws {
+        guard label.range(of: #"^[A-Za-z0-9._-]+$"#, options: .regularExpression) != nil else {
+            throw AdminError.refused("label non valida")
+        }
+    }
+
+    /// Shell steps that act on one item from inside its folder.
+    ///
+    /// Paths are checked before the password prompt, and the prompt can stay
+    /// open for a while. If a folder on the way were swapped for a symlink in
+    /// the meantime, a full path would lead somewhere else. So the root shell
+    /// enters the folder, checks that it is still the one validated, and then
+    /// works on "./name": once inside, later swaps of the path no longer matter,
+    /// and `rm` and `mv` never follow a symlink in the last component.
+    static func insideFolder(of url: URL, _ action: (String) -> String) throws -> String {
+        guard let parent = realPath(url.deletingLastPathComponent()) else {
+            throw AdminError.refused("\(url.path): cartella non trovata")
+        }
+        let folder = shellQuote(parent)
+        let item = shellQuote("./" + url.lastPathComponent)
+        return "( cd -P -- \(folder) && [ \"$(pwd -P)\" = \(folder) ] "
+            + "|| { echo \(shellQuote("cartella cambiata dopo il controllo: \(parent)")) >&2; exit 1; }; "
+            + "\(action(item)) )"
+    }
+
+    /// The path with every symlink resolved, as the shell's `pwd -P` prints it
+    /// (unlike `resolvingSymlinksInPath`, this keeps "/private").
+    static func realPath(_ url: URL) -> String? {
+        guard let resolved = realpath(url.path, nil) else { return nil }
+        defer { free(resolved) }
+        return String(cString: resolved)
+    }
+
+    static func validateSystemItems(_ urls: [URL]) throws {
+        guard !urls.isEmpty else { throw AdminError.refused("nessun elemento") }
+        let validator = SafeRemover(allowedRoots: systemRoots, mode: .dryRun, log: nil)
+        for url in urls {
+            if let error = validator.validate(url) { throw AdminError.refused("\(url.path): \(error)") }
+        }
+    }
+
+    /// Where each item lands in the Trash: its own name, or "name 2", "name 3"…
+    /// when that name is already taken (in the Trash or earlier in the batch).
+    static func trashDestinations(_ urls: [URL], trash: URL) -> [(source: URL, destination: URL)] {
+        var taken: Set<String> = []
+        return urls.map { url in
+            let ext = url.pathExtension
+            let stem = ext.isEmpty ? url.lastPathComponent : url.deletingPathExtension().lastPathComponent
+            var name = url.lastPathComponent
+            var counter = 2
+            while taken.contains(name.lowercased())
+                    || FileManager.default.fileExists(atPath: trash.appendingPathComponent(name).path) {
+                name = ext.isEmpty ? "\(stem) \(counter)" : "\(stem) \(counter).\(ext)"
+                counter += 1
+            }
+            taken.insert(name.lowercased())
+            return (url, trash.appendingPathComponent(name))
         }
     }
 

@@ -33,6 +33,27 @@ import Testing
         #expect(names == ["com.keep.me"])
     }
 
+    /// The container of a running app holds its caches under a folder that is
+    /// not named after the app: the whole container must count as the app's.
+    @Test func cachesInsideARunningAppContainerAreSkipped() throws {
+        let box = try Sandbox(); defer { box.remove() }
+        try box.file("Library/Containers/com.running.app/Data/Library/Caches/blob", in: box.allowed)
+        try box.file("Library/Containers/com.closed.app/Data/Library/Caches/blob", in: box.allowed)
+        try box.file("Library/Caches/com.running.app.ShipIt/update", in: box.allowed)
+        try box.file("Library/Caches/ABCD1234.com.running.app/x", in: box.allowed)
+        let set = try rules("""
+        {"version": 1, "rules": [
+          {"id": "c", "category": "caches", "title": "Cache", "paths": ["~/Library/Caches"]},
+          {"id": "k", "category": "caches", "title": "Cache", "paths": ["~/Library/Containers/*/Data/Library/Caches"]}]}
+        """)
+        let out = RuleEngine(home: box.allowed, protectedNames: ["com.running.app"]).evaluate(set)
+        let paths = out.categories.flatMap(\.items).map(\.url.path)
+        #expect(paths.count == 1)
+        #expect(paths.allSatisfy { $0.contains("com.closed.app") })
+        #expect(!RuleEngine.isProtected(URL(fileURLWithPath: "/Users/x/Library/Caches/com.running.application"),
+                                        by: ["com.running.app"]))
+    }
+
     @Test func itselfTargetAndDefaults() throws {
         let box = try Sandbox(); defer { box.remove() }
         try box.file(".gradle/caches/big.bin", in: box.allowed, bytes: 50_000)

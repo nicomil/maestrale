@@ -43,13 +43,25 @@ final class UninstallerModel {
         isLoading = false
     }
 
+    /// Bumped on every selection change, so results of an older search are dropped.
+    private var selectionGeneration = 0
+
     func select(_ app: InstalledApp?) async {
+        // While removing, the files on screen are the ones being removed: the selection stays.
+        guard !isWorking else { return }
+        selectionGeneration += 1
+        let generation = selectionGeneration
         selectedApp = app
         files = []
         fileSelection = []
         message = nil
         guard let app else { return }
-        let leftovers = await Task.detached { LeftoverFinder().leftovers(for: .init(app: app)) }.value
+        let otherIDs = Set(apps.filter { $0.url != app.url }.flatMap { [$0.bundleID] + $0.embeddedBundleIDs })
+        let leftovers = await Task.detached {
+            LeftoverFinder().leftovers(for: .init(app: app), otherAppIDs: otherIDs)
+        }.value
+        // Another app was chosen in the meantime: these files belong to the old one.
+        guard generation == selectionGeneration, selectedApp?.url == app.url else { return }
         let bundle = ScanItem(url: app.url, size: app.size, risk: .medium, autoSelect: true,
                               needsHelper: !app.isWritable, detail: "Applicazione")
         files = [bundle] + leftovers.sorted { $0.size > $1.size }
@@ -61,32 +73,42 @@ final class UninstallerModel {
     /// Removes the selected files. With `reset`, the app itself is kept and
     /// only its data is removed, so it starts as freshly installed.
     func run(reset: Bool, mode: RemovalMode) async {
-        guard let app = selectedApp else { return }
+        guard let app = selectedApp, !isWorking else { return }
+        // Everything is decided before the first wait: what the user confirmed
+        // is what gets removed, whatever happens on screen meanwhile.
+        let generation = selectionGeneration
+        let chosen = selectedFiles.filter { !reset || $0.url != app.url }
+        guard !chosen.isEmpty else { return }
         isWorking = true
         defer { isWorking = false }
         if mode != .dryRun, !(await quit(app)) {
             message = "Chiudi \(app.name) e riprova."
             return
         }
-        let chosen = selectedFiles.filter { !reset || $0.url != app.url }
+        guard generation == selectionGeneration else { return }
         let urls = chosen.filter { !$0.needsHelper }.map(\.url)
         let remover = SafeRemover(allowedRoots: AllowedRoots.appSupport(), mode: mode)
         var outcomes = await Task.detached { remover.remove(urls) }.value
         var note = ""
         let adminItems = chosen.filter(\.needsHelper)
         if !adminItems.isEmpty {
-            let result = await AppModel.removeAsAdmin(adminItems, dryRun: mode == .dryRun)
+            let result = await AppModel.removeAsAdmin(adminItems, mode: mode)
             outcomes += result.outcomes
             note = result.note
         }
         message = AppModel.summary(outcomes, mode: mode) + note
+        isWorking = false
         if mode != .dryRun {
             if !reset && outcomes.contains(where: { $0.url == app.url && (try? $0.result.get()) != nil }) {
                 apps.removeAll { $0.url == app.url }
+                selectionGeneration += 1
                 selectedApp = nil
                 files = []
+                fileSelection = []
             } else {
+                let note = message
                 await select(app)
+                message = note
             }
         }
     }

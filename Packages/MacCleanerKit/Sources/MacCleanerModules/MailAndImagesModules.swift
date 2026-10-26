@@ -3,6 +3,8 @@ import MacCleanerCore
 
 /// Local copies of Mail attachments. Mail downloads them again from the
 /// server when a message is opened (IMAP and Exchange accounts; not POP).
+/// Local "On My Mac" mailboxes (~/Library/Mail/V*/Mailboxes) are skipped:
+/// there is no server to download those attachments from.
 public struct MailAttachmentsModule: CleanerModule {
     public let id = "mail-attachments"
     public let title = "Allegati di Mail"
@@ -25,6 +27,10 @@ public struct MailAttachmentsModule: CleanerModule {
         else { return [] }
         for case let url as URL in enumerator {
             if Task.isCancelled { break }
+            if url.lastPathComponent == "Mailboxes", url.deletingLastPathComponent().lastPathComponent.hasPrefix("V") {
+                enumerator.skipDescendants()
+                continue
+            }
             guard url.lastPathComponent == "Attachments" else { continue }
             enumerator.skipDescendants()
             for message in (try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)) ?? [] {
@@ -94,9 +100,11 @@ public struct InstallersModule: CleanerModule {
             guard FileKind.of(file.url) == .diskImage, !mounted.contains(file.url.path) else { return }
             let name = Self.normalized(file.url.deletingPathExtension().lastPathComponent)
             // "Spotify-1.2.dmg", "Install Spotify.dmg"; a plain "contains" only for long names.
-            let match = installedNames.first {
+            // A name like the app's proves nothing ("Spotify backup.dmg"): only files
+            // macOS marked as downloaded from the internet can be leftover installers.
+            let match = Self.isInstallerFormat(file.url) && Self.wasDownloaded(file.url) ? installedNames.first {
                 name.hasPrefix($0) || name.hasPrefix("install" + $0) || ($0.count >= 7 && name.contains($0))
-            }
+            } : nil
             let age = RelativeAge.text(since: file.modified).map { "scaricato \($0)" } ?? ""
             if let match {
                 installed.append(ScanItem(url: file.url, size: file.size, risk: .low, autoSelect: true,
@@ -117,6 +125,28 @@ public struct InstallersModule: CleanerModule {
                                            items: other.sorted { $0.size > $1.size }))
         }
         return ScanReport(moduleID: id, categories: categories)
+    }
+
+    /// Only plain .dmg and .pkg files can be treated as leftover installers.
+    /// Sparse images, .img and .iso files, and encrypted disk images are
+    /// usually the user's own data, so they are never preselected.
+    static func isInstallerFormat(_ url: URL) -> Bool {
+        switch url.pathExtension.lowercased() {
+        case "pkg", "mpkg": return true
+        case "dmg": return !isEncryptedImage(url)
+        default: return false
+        }
+    }
+
+    /// True when the file carries the quarantine mark that browsers, Mail and
+    /// AirDrop add to downloads. Disk images the user made never have it.
+    static func wasDownloaded(_ url: URL) -> Bool {
+        getxattr(url.path, "com.apple.quarantine", nil, 0, 0, XATTR_NOFOLLOW) >= 0
+    }
+
+    /// True unless `hdiutil` says plainly that the image is not encrypted.
+    static func isEncryptedImage(_ url: URL) -> Bool {
+        !MalwareScanner.run("/usr/bin/hdiutil", ["isencrypted", url.path]).contains("encrypted: NO")
     }
 
     /// "Visual Studio Code" and "VSCode-darwin-arm64" both start with letters only, lowercased.

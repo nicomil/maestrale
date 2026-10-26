@@ -35,13 +35,23 @@ final class ProtectionModel {
         UserDefaults.standard.removeObject(forKey: "ignoredFindings")
     }
 
-    /// Stops the launch item (if any), then removes the file: to the Trash
-    /// when it is the user's, with the password when it is a system file.
+    /// Stops the launch item (if any) and moves its plist to the Trash;
+    /// otherwise moves the file to the Trash (with the password when it is a
+    /// system file). A launch item that does not stop is left in place.
     func remove(_ finding: MalwareFinding) async {
-        let target = finding.launchItem?.plist ?? finding.path
-        if let item = finding.launchItem, item.domain == .userAgent {
-            _ = await Task.detached { LaunchItemsScanner().setUserAgent(item, enabled: false) }.value
+        if let item = finding.launchItem {
+            do {
+                try await Task.detached { try LaunchItemsScanner().remove(item) }.value
+                message = "\(finding.title) rimosso"
+            } catch AdminError.cancelled {
+                message = nil
+            } catch {
+                message = "\(finding.title): non rimosso (\(error))"
+            }
+            await scan()
+            return
         }
+        let target = finding.path
         let userRoots = AllowedRoots.appSupport() + AllowedRoots.userFiles()
         let remover = SafeRemover(allowedRoots: userRoots, mode: .trash)
         if remover.validate(target) == nil {
@@ -49,13 +59,7 @@ final class ProtectionModel {
             message = AppModel.summary(outcomes, mode: .trash)
         } else {
             do {
-                try await Task.detached {
-                    let runner = AdminRunner()
-                    if let item = finding.launchItem, item.domain != .userAgent {
-                        try? runner.run(.bootoutDaemon(label: item.label))
-                    }
-                    try runner.run(.remove([target]))
-                }.value
+                try await Task.detached { try AdminRunner().run(.moveToTrash([target])) }.value
                 message = "\(finding.title) rimosso"
             } catch AdminError.cancelled {
                 message = nil
@@ -123,7 +127,7 @@ struct ProtectionView: View {
         } message: { finding in
             Text(finding.launchItem != nil
                  ? "Verrà fermato e rimosso l'elemento di avvio. Il programma resta dov'è."
-                 : "Verrà spostato nel Cestino (o eliminato con la password se è un file di sistema).")
+                 : "Verrà spostato nel Cestino (con la password se è un file di sistema).")
         }
     }
 

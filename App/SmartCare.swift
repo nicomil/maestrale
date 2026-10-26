@@ -27,11 +27,18 @@ final class SmartCareModel {
         isRunning = false
     }
 
-    /// Cleans the preselected user-level junk (to the Trash).
+    /// What "Pulisci ora" removes: the junk selected in "Pulizia sistema"
+    /// (the safe preselection, plus or minus the user's changes), without
+    /// the system items that need the password.
+    static func junkToClean(_ app: AppModel) -> [ScanItem] {
+        app.selectedItems(in: "system-junk").filter { !$0.needsHelper }
+    }
+
+    /// Cleans the selected user-level junk (to the Trash).
     func cleanJunk(_ app: AppModel) async {
-        guard let report = app.modules["system-junk"]?.report else { return }
-        let safe = Set(report.allItems.filter { $0.autoSelect && !$0.needsHelper }.map(\.url))
-        app.selection = app.selection.subtracting(report.allItems.map(\.url)).union(safe)
+        guard app.modules["system-junk"]?.report != nil else { return }
+        let systemItems = Set(app.selectedItems(in: "system-junk").filter(\.needsHelper).map(\.url))
+        app.selection.subtract(systemItems)
         let previousMode = app.removalMode
         app.removalMode = .trash
         await app.clean("system-junk")
@@ -44,6 +51,7 @@ struct SmartCareView: View {
     @Environment(AppModel.self) private var model
     @Binding var destination: Destination?
     @State private var stats = SystemMonitor().snapshot()
+    @State private var confirmJunk = false
 
     private var care: SmartCareModel { model.smartCare }
 
@@ -89,7 +97,7 @@ struct SmartCareView: View {
     private var cleanupCard: some View {
         let junk = model.modules["system-junk"]?.report
         let trash = model.modules["trash"]?.report
-        let safeSize = junk?.allItems.filter { $0.autoSelect && !$0.needsHelper }.reduce(Int64(0)) { $0 + $1.size }
+        let safeSize = junk == nil ? nil : SmartCareModel.junkToClean(model).reduce(Int64(0)) { $0 + $1.size }
         return CareCard(title: "Pulizia", icon: "internaldrive", tint: .blue,
                         value: safeSize.map(formatBytes),
                         detail: junk == nil ? "Cache, log e file inutili"
@@ -99,7 +107,15 @@ struct SmartCareView: View {
             HStack {
                 Button("Rivedi") { destination = .module("system-junk") }
                 if (safeSize ?? 0) > 0 {
-                    Button("Pulisci ora") { Task { await care.cleanJunk(model) } }.buttonStyle(.borderedProminent)
+                    Button("Pulisci ora") { confirmJunk = true }
+                        .buttonStyle(.borderedProminent)
+                        .confirmationDialog("Spostare nel Cestino \(formatBytes(safeSize ?? 0)) di file inutili?",
+                                            isPresented: $confirmJunk) {
+                            Button("Sposta nel Cestino") { Task { await care.cleanJunk(model) } }
+                        } message: {
+                            Text("\(SmartCareModel.junkToClean(model).count) elementi selezionati in Pulizia sistema. "
+                                 + "Potrai recuperarli dal Cestino. Per scegliere cosa pulire usa Rivedi.")
+                        }
                 }
             }
         }

@@ -5,10 +5,10 @@ import SwiftUI
 let moduleDescriptions: [String: String] = [
     "system-junk": "Cache, log e file temporanei che le app e macOS ricreano da soli.",
     "trash": "Il Cestino e i cestini dei dischi esterni. Svuotarli è definitivo.",
-    "mail-attachments": "Copie locali degli allegati: Mail li riscarica dal server quando apri il messaggio.",
+    "mail-attachments": "Copie locali degli allegati degli account IMAP ed Exchange: Mail li riscarica dal server quando apri il messaggio. Non usarlo con account POP. Mail deve essere chiusa.",
     "installers": "Immagini disco e pacchetti in Download, Scrivania e Documenti, soprattutto di app già installate.",
     "large-old-files": "I file più grandi delle tue cartelle e i download che non apri da tempo. Niente è preselezionato.",
-    "duplicates": "File identici byte per byte. In ogni gruppo una copia resta sempre.",
+    "duplicates": "File identici byte per byte. In ogni gruppo una copia resta sempre; sono preselezionate solo le copie in Download.",
     "similar-images": "Foto quasi uguali (copie ridimensionate, scatti ripetuti). La migliore resta.",
     "orphan-leftovers": "Dati lasciati da app che non sono più installate. Controlla prima di rimuovere.",
 ]
@@ -88,11 +88,15 @@ struct ModuleView: View {
         let selected = model.selectedItems(in: state.id)
         let needsPassword = selected.contains(where: \.needsHelper)
         let size = model.selectedSize(in: state.id)
+        // The filter only hides rows: hidden items that are selected are cleaned too.
+        let hidden = filter.isEmpty ? 0 : selected.filter { !$0.url.path.localizedCaseInsensitiveContains(filter) }.count
         return HStack {
             RemovalModePicker(mode: $model.removalMode)
             if !blocked.isEmpty {
                 Label("Lascia almeno una copia in \(blocked.count) gruppi", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.orange)
+            } else if hidden > 0 {
+                Label("\(hidden) selezionati nascosti dal filtro", systemImage: "eye.slash").foregroundStyle(.orange)
             } else if needsPassword {
                 Label("Alcuni elementi chiedono la password", systemImage: "lock.fill").foregroundStyle(.secondary)
             }
@@ -108,8 +112,9 @@ struct ModuleView: View {
                         Task { await model.clean(state.id) }
                     }
                 } message: {
-                    Text(model.removalMode.confirmation
-                         + (needsPassword ? " Gli elementi di sistema vengono eliminati con la password di amministratore." : ""))
+                    Text((hidden > 0 ? "Attenzione: \(hidden) elementi selezionati sono nascosti dal filtro e verranno puliti anche loro. " : "")
+                         + model.removalMode.confirmation
+                         + (needsPassword ? " Per gli elementi di sistema macOS chiederà la password di amministratore." : ""))
                 }
         }
         .padding()
@@ -270,7 +275,7 @@ private struct ItemRow: View {
             if item.needsHelper {
                 Label("password", systemImage: "lock.fill").font(.caption)
                     .padding(.horizontal, 6).background(.secondary.opacity(0.15), in: Capsule())
-                    .help("Elemento di sistema: macOS chiederà la password di amministratore e verrà eliminato")
+                    .help("Elemento di sistema: macOS chiederà la password di amministratore")
             }
             if item.risk == .high {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)

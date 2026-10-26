@@ -20,7 +20,21 @@ public struct LaunchItem: Identifiable, Sendable, Hashable {
     /// The app that ships the program, when it lives inside an app bundle.
     public let ownerApp: URL?
 
+    /// Removing the plist needs the password unless it is in the user's own folder.
     public var needsAdmin: Bool { domain != .userAgent }
+    /// Agents, also the ones in /Library/LaunchAgents, run in the user's session
+    /// and can be stopped there without a password; daemons need it.
+    public var stopNeedsAdmin: Bool { domain == .systemDaemon }
+    /// The launchd service, e.g. "gui/501/com.vendor.agent" or "system/com.vendor.daemon".
+    public var service: String {
+        "\(domain == .systemDaemon ? "system" : "gui/\(getuid())")/\(label)"
+    }
+}
+
+public enum LaunchItemError: Error, Equatable, Sendable {
+    /// launchd still has the item after it was asked to stop it.
+    case stillRunning(String)
+    case failed(String)
 }
 
 /// Reads launch agents and daemons, and enables, disables or removes them.
@@ -46,7 +60,7 @@ public struct LaunchItemsScanner: Sendable {
                 let label = dict["Label"] as? String ?? name.replacingOccurrences(of: ".plist", with: "")
                 let program = (dict["Program"] as? String) ?? (dict["ProgramArguments"] as? [String])?.first
                 let broken = program.map { $0.hasPrefix("/") && !FileManager.default.fileExists(atPath: $0) } ?? false
-                let disabled = (dict["Disabled"] as? Bool ?? false) || (domain == .userAgent && disabledUser.contains(label))
+                let disabled = (dict["Disabled"] as? Bool ?? false) || (domain != .systemDaemon && disabledUser.contains(label))
                 items.append(LaunchItem(plist: plist, label: label, program: program, domain: domain,
                                         isDisabled: disabled, isBroken: broken, ownerApp: program.flatMap(Self.ownerApp)))
             }
@@ -74,18 +88,65 @@ public struct LaunchItemsScanner: Sendable {
         return labels
     }
 
-    /// Stops and disables a user agent (no password needed).
-    public func setUserAgent(_ item: LaunchItem, enabled: Bool) -> Bool {
-        guard item.domain == .userAgent else { return false }
+    /// True while launchd has the item loaded.
+    public func isLoaded(_ item: LaunchItem) -> Bool {
+        Self.status("/bin/launchctl", ["print", item.service]) == 0
+    }
+
+    /// Starts or stops an agent in the user's session (no password needed) and
+    /// keeps it that way across logins. Throws if it is still loaded after stopping.
+    public func setAgent(_ item: LaunchItem, enabled: Bool) throws {
+        guard item.domain != .systemDaemon else { throw LaunchItemError.failed("\(item.label) è un servizio di sistema") }
         let domain = "gui/\(getuid())"
         if enabled {
-            _ = Self.run("/bin/launchctl", ["enable", "\(domain)/\(item.label)"])
+            _ = Self.run("/bin/launchctl", ["enable", item.service])
             _ = Self.run("/bin/launchctl", ["bootstrap", domain, item.plist.path])
         } else {
-            _ = Self.run("/bin/launchctl", ["bootout", "\(domain)/\(item.label)"])
-            _ = Self.run("/bin/launchctl", ["disable", "\(domain)/\(item.label)"])
+            _ = Self.run("/bin/launchctl", ["bootout", item.service])
+            _ = Self.run("/bin/launchctl", ["disable", item.service])
+            if isLoaded(item) { throw LaunchItemError.stillRunning(item.label) }
         }
-        return true
+    }
+
+    /// Stops a system daemon with the password and checks that it stopped.
+    public func stopDaemon(_ item: LaunchItem, runner: AdminRunner = AdminRunner()) throws {
+        guard item.domain == .systemDaemon else { return try setAgent(item, enabled: false) }
+        guard isLoaded(item) else { return }
+        try runner.run(.bootoutDaemon(label: item.label))
+        if isLoaded(item) { throw LaunchItemError.stillRunning(item.label) }
+    }
+
+    /// Stops the item, then moves its plist to the Trash. If it cannot be
+    /// stopped, the plist stays where it is, so the item is not hidden from
+    /// the list while it keeps running.
+    public func remove(_ item: LaunchItem, runner: AdminRunner = AdminRunner()) throws {
+        switch item.domain {
+        case .userAgent:
+            try setAgent(item, enabled: false)
+            let remover = SafeRemover(allowedRoots: [home.appendingPathComponent("Library/LaunchAgents")], mode: .trash)
+            if case .failure(let error) = remover.remove([item.plist]).first?.result {
+                throw LaunchItemError.failed("\(item.label): \(error)")
+            }
+        case .systemAgent:
+            try setAgent(item, enabled: false)
+            try runner.run(.moveToTrash([item.plist]))
+        case .systemDaemon:
+            // One password prompt: the root shell stops the daemon and moves the
+            // plist only if launchd no longer has it.
+            try runner.run(.removeDaemon(label: item.label, plist: item.plist))
+            if isLoaded(item) { throw LaunchItemError.stillRunning(item.label) }
+        }
+    }
+
+    static func status(_ tool: String, _ args: [String]) -> Int32 {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: tool)
+        process.arguments = args
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        guard (try? process.run()) != nil else { return -1 }
+        process.waitUntilExit()
+        return process.terminationStatus
     }
 
     @discardableResult
@@ -133,6 +194,19 @@ public struct MaintenanceTask: Identifiable, Sendable {
         case .freePurgeable: "Elimina le istantanee locali di Time Machine e lo spazio che macOS tiene di riserva."
         case .repairPermissions: "Ripristina i permessi della cartella Inizio se compaiono errori di accesso."
         case .periodicScripts: "Ruota i log e pulisce i file temporanei di sistema."
+        }
+    }
+
+    /// For tasks that remove something you may want back, what to tell the
+    /// user before running them; nil when no confirmation is needed.
+    public var warning: String? {
+        switch kind {
+        case .freePurgeable:
+            "Verranno eliminate tutte le istantanee locali di Time Machine: non potrai più recuperare "
+                + "da lì versioni precedenti o file cancellati. I backup sul disco di Time Machine restano."
+        case .repairPermissions:
+            "I permessi personalizzati delle cartelle nella tua Inizio verranno riportati a quelli standard."
+        default: nil
         }
     }
 

@@ -61,7 +61,7 @@ struct PrivacyView: View {
                         .confirmationDialog("Pulire le voci selezionate?", isPresented: $confirm) {
                             Button("Pulisci") { Task { await privacy.clean(dryRun: model.removalMode == .dryRun) } }
                         } message: {
-                            Text("Cronologia e cookie cancellati non si possono recuperare. Dovrai rifare l'accesso ai siti.")
+                            Text("Prima di modificare i database dei browser ne viene messa una copia nel Cestino. Dopo la pulizia dovrai rifare l'accesso ai siti.")
                         }
                 }
                 .padding()
@@ -94,6 +94,8 @@ struct PrivacyView: View {
 
 struct PerformanceView: View {
     @Environment(AppModel.self) private var model
+    @State private var pendingTask: MaintenanceTask?
+    @State private var pendingRemoval: LaunchItem?
     private var performance: PerformanceModel { model.performance }
 
     var body: some View {
@@ -124,6 +126,20 @@ struct PerformanceView: View {
         }
         .navigationTitle("Prestazioni")
         .task { if !performance.hasScanned { await performance.scan() } }
+        .confirmationDialog("\(pendingTask?.title ?? "")?",
+                            isPresented: Binding(get: { pendingTask != nil }, set: { if !$0 { pendingTask = nil } }),
+                            presenting: pendingTask) { task in
+            Button("Esegui", role: .destructive) { Task { await performance.run(task) } }
+        } message: { task in
+            Text(task.warning ?? "")
+        }
+        .confirmationDialog("Rimuovere \(pendingRemoval?.label ?? "")?",
+                            isPresented: Binding(get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }),
+                            presenting: pendingRemoval) { item in
+            Button("Rimuovi", role: .destructive) { Task { await performance.remove(item) } }
+        } message: { _ in
+            Text("Verrà fermato e il suo file di avvio spostato nel Cestino. Il programma resta dov'è.")
+        }
     }
 
     private func taskCard(_ task: MaintenanceTask) -> some View {
@@ -148,7 +164,9 @@ struct PerformanceView: View {
                 if performance.running.contains(task.id) {
                     ProgressView().controlSize(.small)
                 } else {
-                    Button("Esegui") { Task { await performance.run(task) } }
+                    Button("Esegui") {
+                        if task.warning != nil { pendingTask = task } else { Task { await performance.run(task) } }
+                    }
                 }
             }
         }
@@ -177,12 +195,12 @@ struct PerformanceView: View {
                     .lineLimit(1).truncationMode(.middle)
             }
             Spacer()
-            if item.domain == .userAgent || !item.isDisabled {
+            if item.domain != .systemDaemon || !item.isDisabled {
                 Toggle("", isOn: Binding(get: { !item.isDisabled }, set: { _ in Task { await performance.toggle(item) } }))
                     .toggleStyle(.switch).labelsHidden()
-                    .help(item.needsAdmin ? "Fermarlo richiede la password" : "Attiva o disattiva")
+                    .help(item.stopNeedsAdmin ? "Fermarlo richiede la password" : "Attiva o disattiva")
             }
-            Button(role: .destructive) { Task { await performance.remove(item) } } label: {
+            Button(role: .destructive) { pendingRemoval = item } label: {
                 Image(systemName: "trash")
             }
             .buttonStyle(.borderless)

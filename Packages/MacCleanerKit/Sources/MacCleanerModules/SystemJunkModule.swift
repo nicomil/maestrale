@@ -5,7 +5,8 @@ import MacCleanerCore
 /// Caches, logs, developer junk and other files that can be regenerated.
 /// The rules live in `Resources/system-junk.json` (see docs/spec/system-junk.md).
 public struct SystemJunkModule: CleanerModule {
-    public let id = "system-junk"
+    public static let id = "system-junk"
+    public var id: String { Self.id }
     public let title = "Pulizia sistema"
     private let rules: RuleSet
     private let home: URL
@@ -34,7 +35,7 @@ public struct SystemJunkModule: CleanerModule {
     /// Caches of running apps are skipped: deleting them under an open app can
     /// make it misbehave until it is restarted.
     @MainActor
-    static func runningBundleIdentifiers() -> Set<String> {
+    public static func runningBundleIdentifiers() -> Set<String> {
         Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
     }
 }
