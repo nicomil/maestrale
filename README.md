@@ -17,6 +17,7 @@ Un'app macOS indipendente e open source, scritta in Swift 6 e SwiftUI, che repli
 | Codice | 69 file Swift, circa 10.000 righe, 140 test automatici |
 | Firma | ad-hoc con hardened runtime: non serve un account Apple Developer |
 | Dipendenze esterne | solo libyara 4.5.4 (BSD-3), compilata nel pacchetto |
+| Licenza | MIT |
 
 ## Funzioni
 
@@ -134,4 +135,6 @@ Principi validi ovunque:
 | M7 protezione orientata alla sicurezza (14 controlli, YARA, quarantena) | fatto |
 | Ciclo BMAD dopo il feedback d'uso (`docs/bmad/`) | fatto |
 
-MacCleaner è progettato e sviluppato da Nicola Milella. Nasce come progetto indipendente e il codice è pubblico su GitHub; non è ancora definita una licenza di ridistribuzione. libyara è inclusa con la sua licenza BSD-3.
+## Licenza
+
+MacCleaner è progettato e sviluppato da Nicola Milella ed è distribuito con licenza [MIT](LICENSE). libyara è inclusa con la sua licenza BSD-3 (vedi `Packages/MacCleanerKit/Sources/CYara/LICENSE`).
