@@ -1,5 +1,5 @@
-import MacCleanerCore
-import MacCleanerModules
+import MaestraleCore
+import MaestraleModules
 import SwiftUI
 
 /// Live CPU, memory, disk and battery in the menu bar, with quick actions.
@@ -14,7 +14,7 @@ struct MenuBarContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("MacCleaner").font(.headline)
+            Text("Maestrale").font(.headline)
             if let snapshot {
                 meter("CPU", value: snapshot.cpuUsage, text: "\(Int(snapshot.cpuUsage * 100))%")
                 meter("Memoria", value: snapshot.memoryPressure,
@@ -46,7 +46,7 @@ struct MenuBarContent: View {
                         } catch { message = nil }
                     }
                 }
-                Button("Apri MacCleaner") {
+                Button("Apri Maestrale") {
                     openWindow(id: "main")
                     NSApp.activate()
                 }
@@ -54,7 +54,7 @@ struct MenuBarContent: View {
             }
             if let message { Text(message).font(.caption).foregroundStyle(.secondary) }
             Divider()
-            Button("Esci da MacCleaner") { NSApp.terminate(nil) }.buttonStyle(.plain).foregroundStyle(.secondary)
+            Button("Esci da Maestrale") { NSApp.terminate(nil) }.buttonStyle(.plain).foregroundStyle(.secondary)
         }
         .padding(14)
         .frame(width: 280)
@@ -90,7 +90,7 @@ struct RulesSettings: View {
     @State private var message: String?
 
     var body: some View {
-        Text("Le regole di base di MacCleaner sono sempre attive. Aggiungi set aperti come YARA-Forge o le regole macOS di Elastic, "
+        Text("Le regole di base di Maestrale sono sempre attive. Aggiungi set aperti come YARA-Forge o le regole macOS di Elastic, "
              + "e l'esportazione di MalwareBazaar per gli hash noti. Confronta lo SHA-256 con quello pubblicato.")
             .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         ForEach(files) { file in

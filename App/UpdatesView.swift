@@ -1,4 +1,4 @@
-import MacCleanerModules
+import MaestraleModules
 import SwiftUI
 
 struct UpdatesView: View {

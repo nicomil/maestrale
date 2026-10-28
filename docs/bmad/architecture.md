@@ -1,6 +1,6 @@
 # Architettura (Architect)
 
-Il progetto ha tre livelli: `MacCleanerCore` (modelli, regole, rimozione sicura), `MacCleanerModules` (scansioni e operazioni) e l'app SwiftUI (`App/`). Le modifiche seguono la stessa divisione: la logica va nei pacchetti, dove è testabile con `swift test`; le viste cambiano solo come mostrano e invocano quella logica.
+Il progetto ha tre livelli: `MaestraleCore` (modelli, regole, rimozione sicura), `MaestraleModules` (scansioni e operazioni) e l'app SwiftUI (`App/`). Le modifiche seguono la stessa divisione: la logica va nei pacchetti, dove è testabile con `swift test`; le viste cambiano solo come mostrano e invocano quella logica.
 
 ## Core
 

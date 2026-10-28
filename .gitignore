@@ -3,6 +3,6 @@ re-notes/
 build/
 DerivedData/
 *.xcodeproj/xcuserdata/
-MacCleaner.xcodeproj/
+Maestrale.xcodeproj/
 .build/
 .swiftpm/

@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
-import MacCleanerCore
-import MacCleanerModules
+import MaestraleCore
+import MaestraleModules
 import Observation
 
 /// State of the Uninstaller screen.

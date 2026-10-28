@@ -1,5 +1,5 @@
-import MacCleanerCore
-import MacCleanerModules
+import MaestraleCore
+import MaestraleModules
 import SwiftUI
 
 /// What each list-based module does, shown under its title.

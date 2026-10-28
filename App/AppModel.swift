@@ -1,6 +1,6 @@
 import Foundation
-import MacCleanerCore
-import MacCleanerModules
+import MaestraleCore
+import MaestraleModules
 import Observation
 
 /// Where the sidebar can take the user.

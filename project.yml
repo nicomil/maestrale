@@ -1,4 +1,4 @@
-name: MacCleaner
+name: Maestrale
 options:
   bundleIdPrefix: it.nico
   deploymentTarget:
@@ -6,8 +6,8 @@ options:
   createIntermediateGroups: true
 
 packages:
-  MacCleanerKit:
-    path: Packages/MacCleanerKit
+  MaestraleKit:
+    path: Packages/MaestraleKit
 
 settings:
   base:
@@ -15,17 +15,17 @@ settings:
     MACOSX_DEPLOYMENT_TARGET: "14.0"
 
 targets:
-  MacCleaner:
+  Maestrale:
     type: application
     platform: macOS
     sources: [App]
     dependencies:
-      - package: MacCleanerKit
-        product: MacCleanerCore
-      - package: MacCleanerKit
-        product: MacCleanerModules
-      # Privileged helper, next to the app's executable (Contents/MacOS/mchelper).
-      - target: mchelper
+      - package: MaestraleKit
+        product: MaestraleCore
+      - package: MaestraleKit
+        product: MaestraleModules
+      # Privileged helper, next to the app's executable (Contents/MacOS/mshelper).
+      - target: mshelper
         embed: true
         codeSign: false
         copy:
@@ -33,14 +33,14 @@ targets:
     info:
       path: App/Info.plist
       properties:
-        CFBundleDisplayName: MacCleaner
+        CFBundleDisplayName: Maestrale
         LSApplicationCategoryType: public.app-category.utilities
         NSHumanReadableCopyright: © 2026 Nicola Milella · MIT
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: it.nico.maccleaner
-        MARKETING_VERSION: "1.0"
-        CURRENT_PROJECT_VERSION: "1"
+        PRODUCT_BUNDLE_IDENTIFIER: it.nico.maestrale
+        MARKETING_VERSION: "1.1"
+        CURRENT_PROJECT_VERSION: "2"
         # Not sandboxed: the app must read and clean folders across the home.
         ENABLE_APP_SANDBOX: NO
         ENABLE_HARDENED_RUNTIME: YES
@@ -59,16 +59,16 @@ targets:
 
   # The only code that touches system files as root. AdminRunner copies it to a
   # root-only folder, checks its hash and runs it after the password prompt.
-  mchelper:
+  mshelper:
     type: tool
     platform: macOS
-    sources: [Packages/MacCleanerKit/Sources/mchelper]
+    sources: [Packages/MaestraleKit/Sources/mshelper]
     dependencies:
-      - package: MacCleanerKit
-        product: MacCleanerCore
+      - package: MaestraleKit
+        product: MaestraleCore
     settings:
       base:
-        PRODUCT_NAME: mchelper
+        PRODUCT_NAME: mshelper
         ENABLE_HARDENED_RUNTIME: YES
         # The helper loads no libraries of its own, so it can always run hardened.
         OTHER_CODE_SIGN_FLAGS: "--options=runtime"
@@ -77,28 +77,28 @@ targets:
         SKIP_INSTALL: YES
 
   # Tests of the app's own logic (selection, scans). They run inside the app.
-  MacCleanerTests:
+  MaestraleTests:
     type: bundle.unit-test
     platform: macOS
     sources: [AppTests]
     dependencies:
-      - target: MacCleaner
+      - target: Maestrale
     settings:
       base:
-        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/MacCleaner.app/Contents/MacOS/MacCleaner"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Maestrale.app/Contents/MacOS/Maestrale"
         BUNDLE_LOADER: "$(TEST_HOST)"
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_IDENTITY: "-"
         CODE_SIGN_STYLE: Manual
-        PRODUCT_BUNDLE_IDENTIFIER: it.nico.maccleaner.tests
+        PRODUCT_BUNDLE_IDENTIFIER: it.nico.maestrale.tests
 
 schemes:
-  MacCleaner:
+  Maestrale:
     build:
       targets:
-        MacCleaner: all
+        Maestrale: all
     test:
       targets:
-        - MacCleanerTests
-        - package: MacCleanerKit/MacCleanerCoreTests
-        - package: MacCleanerKit/MacCleanerModulesTests
+        - MaestraleTests
+        - package: MaestraleKit/MaestraleCoreTests
+        - package: MaestraleKit/MaestraleModulesTests

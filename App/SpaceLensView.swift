@@ -1,5 +1,5 @@
-import MacCleanerCore
-import MacCleanerModules
+import MaestraleCore
+import MaestraleModules
 import SwiftUI
 
 /// Interactive map of what takes space: treemap on the left, list on the right.

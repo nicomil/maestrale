@@ -1,5 +1,5 @@
-import MacCleanerCore
-import MacCleanerModules
+import MaestraleCore
+import MaestraleModules
 import SwiftUI
 
 /// Apps on the left, the selected app's files on the right.

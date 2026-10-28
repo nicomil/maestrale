@@ -1,6 +1,6 @@
 # Specifiche funzionali
 
-Queste specifiche descrivono **cosa** fa ogni modulo di MacCleaner: quali cartelle e quali tipi di file considera, cosa preseleziona, cosa non tocca mai e con quali permessi. Sono il riferimento con cui il codice è stato scritto e con cui va confrontato quando cambia.
+Queste specifiche descrivono **cosa** fa ogni modulo di Maestrale: quali cartelle e quali tipi di file considera, cosa preseleziona, cosa non tocca mai e con quali permessi. Sono il riferimento con cui il codice è stato scritto e con cui va confrontato quando cambia.
 
 Le regole si basano sulla conoscenza pubblica di macOS: posizioni standard di cache e log, launchd e Launch Services, container delle app, database dei browser, TCC, XProtect e Gatekeeper.
 

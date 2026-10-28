@@ -1,15 +1,15 @@
 import Foundation
-import MacCleanerCore
-import MacCleanerModules
+import MaestraleCore
+import MaestraleModules
 import Testing
-@testable import MacCleaner
+@testable import Maestrale
 
 /// A temporary folder that is removed at the end of a test.
 struct TempFolder {
     let url: URL
 
     init() throws {
-        url = FileManager.default.temporaryDirectory.appendingPathComponent("maccleaner-app-\(UUID().uuidString)")
+        url = FileManager.default.temporaryDirectory.appendingPathComponent("maestrale-app-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     }
 
@@ -273,5 +273,35 @@ struct ProgressCenterTests {
         #expect(!center.continuation()())
         center.end()
         #expect(center.current == nil)
+    }
+}
+
+struct LegacyMigrationTests {
+    @Test func foldersMoveOnceAndNeverOverwrite() throws {
+        let home = try TempFolder()
+        defer { home.remove() }
+        let logs = home.url.appendingPathComponent("Library/Logs")
+        try FileManager.default.createDirectory(at: logs.appendingPathComponent("MacCleaner"), withIntermediateDirectories: true)
+        try "old".write(to: logs.appendingPathComponent("MacCleaner/operations.log"), atomically: true, encoding: .utf8)
+        let defaults = UserDefaults(suiteName: "it.nico.maestrale.tests.\(UUID().uuidString)")!
+        LegacyMigration.run(home: home.url, defaults: defaults)
+        #expect(FileManager.default.fileExists(atPath: logs.appendingPathComponent("Maestrale/operations.log").path))
+        #expect(!FileManager.default.fileExists(atPath: logs.appendingPathComponent("MacCleaner").path))
+        // A second old folder appearing later never replaces the new one.
+        try FileManager.default.createDirectory(at: logs.appendingPathComponent("MacCleaner"), withIntermediateDirectories: true)
+        #expect(!LegacyMigration.moveIfNeeded(from: logs.appendingPathComponent("MacCleaner"), to: logs.appendingPathComponent("Maestrale")))
+    }
+
+    @Test func oldPreferencesAreCopiedWithoutOverwriting() {
+        let suite = "it.nico.maestrale.tests.\(UUID().uuidString)"
+        let oldDomain = "it.nico.maccleaner.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.setPersistentDomain(["largeFileMB": 500, "showMenuBar": false], forName: oldDomain)
+        defaults.set(true, forKey: "showMenuBar")
+        LegacyMigration.copyDefaultsIfNeeded(into: defaults, from: oldDomain)
+        #expect(defaults.integer(forKey: "largeFileMB") == 500)
+        #expect(defaults.bool(forKey: "showMenuBar") == true)
+        defaults.removePersistentDomain(forName: oldDomain)
+        defaults.removePersistentDomain(forName: suite)
     }
 }

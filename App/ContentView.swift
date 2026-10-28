@@ -1,4 +1,4 @@
-import MacCleanerCore
+import MaestraleCore
 import SwiftUI
 
 struct ContentView: View {
@@ -77,7 +77,7 @@ struct WelcomeView: View {
     var body: some View {
         VStack(spacing: 18) {
             Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 84, height: 84)
-            Text("Benvenuto in MacCleaner").font(.largeTitle.bold())
+            Text("Benvenuto in Maestrale").font(.largeTitle.bold())
             VStack(alignment: .leading, spacing: 14) {
                 point("sparkles", "Smart Care", "Un clic per controllare pulizia, protezione, aggiornamenti e prestazioni.")
                 point("trash", "Niente sparisce per sbaglio",

@@ -1,5 +1,5 @@
-import MacCleanerCore
-import MacCleanerModules
+import MaestraleCore
+import MaestraleModules
 import Observation
 import SwiftUI
 
@@ -377,7 +377,7 @@ struct ProtectionView: View {
             Button("Metti in quarantena", role: .destructive) { Task { await protection.quarantine(finding) } }
         } message: { finding in
             Text((finding.launchItem != nil ? "L'elemento di avvio verrà fermato e rimosso. " : "")
-                 + "Il file finirà nella quarantena di MacCleaner, senza permessi: non potrà più partire. Potrai ripristinarlo o eliminarlo"
+                 + "Il file finirà nella quarantena di Maestrale, senza permessi: non potrà più partire. Potrai ripristinarlo o eliminarlo"
                  + (finding.path.map { KnownLocations.isSystem($0.path) ? "" : ", con la password se è un file di sistema." } ?? "."))
         }
         .sheet(isPresented: $showQuarantine) { QuarantineView() }

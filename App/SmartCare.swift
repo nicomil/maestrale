@@ -1,5 +1,5 @@
-import MacCleanerCore
-import MacCleanerModules
+import MaestraleCore
+import MaestraleModules
 import Observation
 import SwiftUI
 import UserNotifications
@@ -227,7 +227,7 @@ final class Scheduler {
         let dangers = app.protection.newDangers
         if !dangers.isEmpty {
             let content = UNMutableNotificationContent()
-            content.title = "MacCleaner: controlla la Protezione"
+            content.title = "Maestrale: controlla la Protezione"
             content.body = dangers.count == 1 ? "Nuovo pericolo: \(dangers[0].title)" : "\(dangers.count) nuovi pericoli, il primo: \(dangers[0].title)"
             content.sound = .default
             try? await UNUserNotificationCenter.current().add(
@@ -236,7 +236,7 @@ final class Scheduler {
         let size = app.modules["system-junk"]?.report?.allItems.filter(\.autoSelect).reduce(Int64(0)) { $0 + $1.size } ?? 0
         guard size > 500_000_000 else { return }
         let content = UNMutableNotificationContent()
-        content.title = "MacCleaner"
+        content.title = "Maestrale"
         content.body = "Puoi liberare \(formatBytes(size)) di file inutili."
         try? await UNUserNotificationCenter.current().add(
             UNNotificationRequest(identifier: "auto-scan", content: content, trigger: nil))

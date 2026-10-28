@@ -1,7 +1,7 @@
 # PRD (Product Manager)
 
 ## Obiettivo
-Rendere affidabili le funzioni di base segnalate (svuotare il Cestino, disinstallare un'app, aggiornamenti coerenti) e migliorare l'uso quotidiano (selezione multipla, avanzi più sicuri, schermata Protezione leggibile), senza allentare le regole di sicurezza del progetto: niente rimozioni fuori dalle cartelle consentite, elementi a rischio mai preselezionati, operazioni di sistema solo tramite `mchelper`.
+Rendere affidabili le funzioni di base segnalate (svuotare il Cestino, disinstallare un'app, aggiornamenti coerenti) e migliorare l'uso quotidiano (selezione multipla, avanzi più sicuri, schermata Protezione leggibile), senza allentare le regole di sicurezza del progetto: niente rimozioni fuori dalle cartelle consentite, elementi a rischio mai preselezionati, operazioni di sistema solo tramite `mshelper`.
 
 ## Epic 1: pulizia affidabile
 
@@ -74,4 +74,4 @@ Criteri di accettazione
 ## Fuori ambito
 - Scaricare e installare aggiornamenti.
 - Nuove fonti di avanzi (Steam, JetBrains, plugin audio).
-- Modifiche a `mchelper`.
+- Modifiche a `mshelper`.

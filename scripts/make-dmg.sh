@@ -7,19 +7,19 @@ export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Develope
 out="${1:-build/dist}"
 
 xcodegen generate >/dev/null
-xcodebuild -project MacCleaner.xcodeproj -scheme MacCleaner -configuration Release \
+xcodebuild -project Maestrale.xcodeproj -scheme Maestrale -configuration Release \
   -derivedDataPath build/DerivedData build 2>&1 | grep -E "error:|BUILD" || true
-app="build/DerivedData/Build/Products/Release/MacCleaner.app"
+app="build/DerivedData/Build/Products/Release/Maestrale.app"
 [[ -d "$app" ]] || { echo "build failed: $app not found" >&2; exit 1; }
 
 version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app/Contents/Info.plist")
 stage=$(mktemp -d)
 mkdir -p "$out"
-ditto "$app" "$stage/MacCleaner.app"
+ditto "$app" "$stage/Maestrale.app"
 ln -s /Applications "$stage/Applications"
-dmg="$out/MacCleaner-$version.dmg"
+dmg="$out/Maestrale-$version.dmg"
 rm -f "$dmg"
-hdiutil create -quiet -volname "MacCleaner $version" -srcfolder "$stage" -ov -format UDZO "$dmg"
+hdiutil create -quiet -volname "Maestrale $version" -srcfolder "$stage" -ov -format UDZO "$dmg"
 rm -rf "$stage"
 shasum -a 256 "$dmg" | tee "$dmg.sha256"
 echo "dmg: $dmg"

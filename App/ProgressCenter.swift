@@ -1,5 +1,5 @@
 import Foundation
-import MacCleanerCore
+import MaestraleCore
 import SwiftUI
 
 /// One place that knows about the long operation in progress, whatever screen
