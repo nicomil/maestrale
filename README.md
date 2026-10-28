@@ -1,6 +1,6 @@
 # MacCleaner
 
-Un'app macOS personale, scritta in Swift 6 e SwiftUI, che replica le funzioni di CleanMyMac 5: pulizia, spazio, applicazioni, protezione e velocità. Nessun abbonamento, nessuna telemetria, nessun demone sempre acceso: ogni operazione parte da un clic, viene mostrata prima di essere eseguita e finisce nel log.
+Un'app macOS indipendente e open source, scritta in Swift 6 e SwiftUI, che replica le funzioni di CleanMyMac 5: pulizia, spazio, applicazioni, protezione e velocità. Nessun abbonamento, nessuna telemetria, nessun demone sempre acceso: ogni operazione parte da un clic, viene mostrata prima di essere eseguita e finisce nel log.
 
 > Sito di presentazione con screenshot: **https://nicomil.github.io/maccleaner/**
 
@@ -15,7 +15,7 @@ Un'app macOS personale, scritta in Swift 6 e SwiftUI, che replica le funzioni di
 | Piattaforma | macOS 14 o successivo, Apple Silicon e Intel |
 | Linguaggio | Swift 6 (strict concurrency), SwiftUI, Swift Package Manager |
 | Codice | 69 file Swift, circa 10.000 righe, 140 test automatici |
-| Firma | ad-hoc con hardened runtime, per uso personale |
+| Firma | ad-hoc con hardened runtime: non serve un account Apple Developer |
 | Dipendenze esterne | solo libyara 4.5.4 (BSD-3), compilata nel pacchetto |
 
 ## Funzioni
@@ -133,4 +133,4 @@ Principi validi ovunque:
 | M7 protezione orientata alla sicurezza (14 controlli, YARA, quarantena) | fatto |
 | Ciclo BMAD dopo il feedback d'uso (`docs/bmad/`) | fatto |
 
-Progetto a uso personale, senza licenza di ridistribuzione. libyara è inclusa con la sua licenza BSD-3.
+MacCleaner è progettato e sviluppato da Nicola Milella. Nasce come progetto indipendente e il codice è pubblico su GitHub; non è ancora definita una licenza di ridistribuzione. libyara è inclusa con la sua licenza BSD-3.
