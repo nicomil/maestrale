@@ -143,9 +143,11 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 p code { background: var(--bg-2); padding: 1px 6px; border-radius: 6px; font-size: .92em; }
 
 /* gallery */
-.gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
-.gallery figure { margin: 0; }
-.gallery figcaption { font-size: 13px; color: var(--muted); margin-top: 8px; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+.gallery figure { margin: 0; min-width: 0; }
+.gallery img { width: 100%; max-width: 100%; height: auto; display: block; border-radius: var(--radius); box-shadow: var(--shadow); border: 1px solid var(--line); }
+.gallery figcaption { font-size: 13px; color: var(--muted); margin-top: 10px; }
+img { max-width: 100%; height: auto; }
 
 footer { padding: 40px 0 60px; color: var(--muted); font-size: 14px; border-top: 1px solid var(--line); }
 footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
