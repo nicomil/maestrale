@@ -7,7 +7,6 @@ Framework: `UpdaterScanning`, `AppInfoNetworkService`, `MASUpdaterService`.
 |---|---|---|
 | App con Sparkle | `SparkleApplicationsDataSource`, `SparkleAppFeedProvider`, `SparkleAppValidator` | L'app contiene `Contents/Frameworks/Sparkle.framework` e la chiave `SUFeedURL` in `Info.plist` (B). Si scarica l'appcast XML e si confronta `sparkle:version` / `sparkle:shortVersionString` con `CFBundleVersion` / `CFBundleShortVersionString`. |
 | App dell'App Store | `MASApplicationsDataSource` | App con `Contents/_MASReceipt/receipt`. CMM usa un proprio servizio per ottenere le versioni. |
-| Database MacPaw | `AppInfoNetworkService`, `UpdaterKnowledgeBaseType` | Servizio proprietario che fornisce versioni e URL di download per app senza Sparkle (campo `sparkle_feed_url` nelle risposte). **Non replicabile.** |
 | macOS | `SystemUpdateScanTask` | Aggiornamenti di sistema disponibili. |
 
 ## Sostituti nella nostra app

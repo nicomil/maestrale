@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MacCleaner</title>
-<meta name="description" content="MacCleaner: app macOS indipendente e open source in Swift 6 e SwiftUI che replica le funzioni di CleanMyMac 5. Pulizia, spazio, applicazioni, protezione e velocità, senza abbonamento né telemetria.">
+<meta name="description" content="MacCleaner: app macOS indipendente e open source in Swift 6 e SwiftUI per pulizia, spazio, applicazioni, protezione e velocità del Mac, senza abbonamento né telemetria.">
 <link rel="icon" href="assets/favicon.png">
 <meta property="og:title" content="MacCleaner">
 <meta property="og:description" content="Pulizia, spazio, applicazioni, protezione e velocità per il Mac. Open source, in Swift 6.">
@@ -87,6 +87,7 @@ header.top nav a:hover { color: var(--text); text-decoration: none; }
 .btn:hover { text-decoration: none; border-color: var(--accent); }
 .btn.primary { background: linear-gradient(135deg, var(--accent-2), var(--accent)); color: #2a1900; border-color: transparent; }
 .btn svg { width: 18px; height: 18px; }
+.hero .hint { color: var(--muted); font-size: 13px; margin: 12px 0 0; }
 .hero .shot { margin: 44px auto 0; max-width: 1000px; }
 .shot img { width: 100%; height: auto; display: block; border-radius: var(--radius); box-shadow: var(--shadow); border: 1px solid var(--line); }
 
@@ -181,14 +182,19 @@ dialog.lb img { width: 100%; height: auto; max-height: 92vh; object-fit: contain
   <div class="wrap">
     <img class="icon" src="assets/icon.png" alt="Icona di MacCleaner">
     <h1>Il Mac pulito, senza abbonamento.</h1>
-    <p class="lead">MacCleaner è un'app macOS indipendente e open source, scritta in Swift 6 e SwiftUI, che replica le funzioni di CleanMyMac 5: pulizia, spazio, applicazioni, protezione e velocità. Ogni operazione parte da un clic, si vede prima di essere eseguita e finisce nel log.</p>
+    <p class="lead">MacCleaner è un'app macOS indipendente e open source, scritta in Swift 6 e SwiftUI, che riunisce in una sola finestra pulizia, spazio, applicazioni, protezione e velocità del Mac. Ogni operazione parte da un clic, si vede prima di essere eseguita e finisce nel log.</p>
     <div class="cta">
-      <a class="btn primary" href="https://github.com/nicomil/maccleaner">
+      <a class="btn primary" href="https://github.com/nicomil/maccleaner/releases/latest">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+        Scarica il DMG
+      </a>
+      <a class="btn" href="https://github.com/nicomil/maccleaner">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.7 5.5.7 11.8c0 5 3.2 9.2 7.7 10.7.6.1.8-.2.8-.5v-2c-3.1.7-3.8-1.3-3.8-1.3-.5-1.3-1.2-1.7-1.2-1.7-1-.7.1-.7.1-.7 1.1.1 1.7 1.2 1.7 1.2 1 1.7 2.6 1.2 3.3.9.1-.7.4-1.2.7-1.5-2.5-.3-5.1-1.3-5.1-5.6 0-1.2.4-2.2 1.2-3-.1-.3-.5-1.5.1-3 0 0 1-.3 3.1 1.2a10.7 10.7 0 0 1 5.7 0c2.1-1.5 3.1-1.2 3.1-1.2.6 1.5.2 2.7.1 3 .8.8 1.2 1.8 1.2 3 0 4.3-2.6 5.3-5.1 5.6.4.4.8 1.1.8 2.1v3.1c0 .3.2.6.8.5 4.5-1.5 7.7-5.7 7.7-10.7C23.3 5.5 18.3.5 12 .5z"/></svg>
         Codice su GitHub
       </a>
-      <a class="btn" href="#build">Compila e installa</a>
+      <a class="btn" href="#build">Compila da sorgente</a>
     </div>
+    <p class="hint">macOS 14 o successivo · firmata ad-hoc: al primo avvio clic destro → Apri</p>
     <div class="shot">
       <a href="shots/01-smart-care.png" data-lb><img src="shots/01-smart-care.png" alt="MacCleaner, schermata Smart Care: pulizia, protezione, aggiornamenti, prestazioni e spazio riassunti in cinque schede"></a>
     </div>
@@ -206,8 +212,8 @@ dialog.lb img { width: 100%; height: auto; max-height: 92vh; object-fit: contain
 <section id="funzioni">
   <div class="wrap">
     <div class="kicker">Funzioni</div>
-    <h2>Tutto quello che fa CleanMyMac, modulo per modulo.</h2>
-    <p class="sub">La barra laterale segue le stesse aree di CleanMyMac 5. Ogni modulo produce un elenco di categorie e voci con dimensione, rischio e preselezione; l'interfaccia è la stessa per tutti.</p>
+    <h2>Pulizia, spazio, applicazioni, protezione: modulo per modulo.</h2>
+    <p class="sub">La barra laterale è divisa in quattro aree: Pulizia, Spazio, Applicazioni, Protezione e velocità. Ogni modulo produce un elenco di categorie e voci con dimensione, rischio e preselezione; l'interfaccia è la stessa per tutti.</p>
 
     <div class="feature">
       <div class="text">
@@ -318,7 +324,7 @@ dialog.lb img { width: 100%; height: auto; max-height: 92vh; object-fit: contain
       <div class="box root"><code>mchelper</code><span>L'unico codice che tocca i file di sistema come root. Copiato in una cartella di sola proprietà di root, verificato con SHA-256, poi eseguito.</span></div>
       <div class="box"><code>mccli</code><span>Le stesse scansioni da Terminale, in sola lettura.</span></div>
     </div>
-    <p class="sub" style="margin-top:28px">Le specifiche funzionali vengono da uno studio di CleanMyMac 5.7.2 (analisi statica con rea e Ghidra, cattura dinamica con <code>fs_usage</code>) e non contengono codice, testi o asset di MacPaw: le regole sono riscritte da zero sulla conoscenza pubblica di macOS. L'ultimo ciclo di lavoro è documentato con il metodo BMAD in <a href="https://github.com/nicomil/maccleaner/tree/main/docs/bmad"><code>docs/bmad/</code></a>: brief, PRD, architettura, storie e QA.</p>
+    <p class="sub" style="margin-top:28px">Le specifiche funzionali in <a href="https://github.com/nicomil/maccleaner/tree/main/docs/spec"><code>docs/spec/</code></a> descrivono ogni modulo: cosa cerca, cosa preseleziona, cosa non tocca mai. Le regole sono scritte sulla conoscenza pubblica di macOS. L'ultimo ciclo di lavoro è documentato con il metodo BMAD in <a href="https://github.com/nicomil/maccleaner/tree/main/docs/bmad"><code>docs/bmad/</code></a>: brief, PRD, architettura, storie e QA.</p>
   </div>
 </section>
 
@@ -340,9 +346,10 @@ dialog.lb img { width: 100%; height: auto; max-height: 92vh; object-fit: contain
 
 <section id="build">
   <div class="wrap">
-    <div class="kicker">Build</div>
-    <h2>Compila e installa in tre comandi.</h2>
-    <p class="sub">Servono Xcode e XcodeGen (<code>brew install xcodegen</code>). La firma è ad-hoc, quindi non serve un account Apple Developer: dopo l'installazione concedi l'Accesso completo al disco in Impostazioni di Sistema → Privacy e sicurezza.</p>
+    <div class="kicker">Installazione</div>
+    <h2>Scarica il DMG, o compila in tre comandi.</h2>
+    <p class="sub"><b>Dal DMG</b>: scarica l'<a href="https://github.com/nicomil/maccleaner/releases/latest">ultima release</a>, trascina MacCleaner in Applicazioni. L'app è firmata ad-hoc e non notarizzata, quindi al primo avvio macOS la blocca: clic destro → <b>Apri</b> → <b>Apri</b>, una volta sola (oppure <code>xattr -dr com.apple.quarantine /Applications/MacCleaner.app</code>). Poi concedi l'Accesso completo al disco in Impostazioni di Sistema → Privacy e sicurezza. Accanto al DMG c'è il file <code>.sha256</code> per verificarlo.</p>
+    <p class="sub"><b>Da sorgente</b>: servono Xcode e XcodeGen (<code>brew install xcodegen</code>); non serve un account Apple Developer.</p>
 <pre><code>git clone https://github.com/nicomil/maccleaner.git &amp;&amp; cd maccleaner
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 

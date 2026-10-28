@@ -1,22 +1,13 @@
-# Specifiche funzionali (studio di CleanMyMac 5.7.2)
+# Specifiche funzionali
 
-Queste specifiche descrivono **cosa** fa CleanMyMac 5, modulo per modulo, così da poter scrivere da zero un'app personale equivalente. Non contengono codice, testi o asset di MacPaw.
+Queste specifiche descrivono **cosa** fa ogni modulo di MacCleaner: quali cartelle e quali tipi di file considera, cosa preseleziona, cosa non tocca mai e con quali permessi. Sono il riferimento con cui il codice è stato scritto e con cui va confrontato quando cambia.
 
-## Fonti e metodo
-- **Analisi statica** del bundle `/Applications/CleanMyMac_5.app` (v5.7.2, arm64 + x86_64): nomi delle classi Objective-C (`nm`), simboli Swift demangled (`swift-demangle`), stringhe (`strings`). Output grezzi in `re-notes/` (non versionato).
-- **Strumento**: rea 6.8.0 (`rea-agents`), con Ghidra 12.1.4 come motore per il pseudocodice, usato solo dove la logica non si deduce dai nomi.
-- **Analisi dinamica** (da fare): `fs_usage` durante una sola scansione, per confermare i percorsi letti. Vedi `dynamic-capture.md`.
+Le regole si basano sulla conoscenza pubblica di macOS: posizioni standard di cache e log, launchd e Launch Services, container delle app, database dei browser, TCC, XProtect e Gatekeeper.
 
-## Cosa NON si estrae
-- `Contents/Resources/info.cmmkb` (circa 290 KB, cifrato): è la "knowledge base" che alimenta tutti i tipi `*KnowledgeBase` (cache, log, lingue, launch agent, login item, privacy, uninstaller, updater). Non viene decifrato. Le nostre regole si scrivono da zero partendo dalla conoscenza pubblica di macOS e dall'osservazione dinamica.
-- Database malware Moonlock (`MalwareDatabaseService`, `/engine/v3/database`) e firme YARA: proprietari. Si usano fonti aperte.
-- Licenza, attivazione, telemetria (`ActivationService`, `AnalyticsService`, `CleanMyMacNFRService`).
-
-## Architettura osservata (utile come riferimento)
-- **Scansione**: `ScanningCore` gestisce una coda di task con dipendenze, priorità, timeout e progressi composti (`ProcessingQueue`, `DependentTask`, `CompoundProgress`, `TimeoutProblem`). Ogni modulo fornisce una `*ScanTaskFactory`.
-- **Pulizia**: `CleaningCore` ha tre strategie di rimozione: `MoveToTrashFileRemover` (Cestino), `FileRemover` (cancellazione diretta) e `PrivilegedFileRemover` (via helper root). C'è anche un `DebugFileRemover` (dry-run).
-- **Helper privilegiato**: `com.macpaw.CleanMyMac5.Agent` (LaunchService) più `PrivilegedOperationsPerformerService`, collegati via XPC (`IPCProtocol`).
-- **Modelli**: ogni risultato è un nodo di un albero (`CleanableNodeType`, `CleanupAwareNode`), con figli ordinati e dimensione aggregata.
+## Struttura comune
+- **Scansione**: ogni modulo produce categorie di voci con dimensione, rischio e preselezione; le categorie a rischio alto non sono mai preselezionate.
+- **Pulizia**: tre modalità, Cestino (predefinita), eliminazione diretta e prova. I file di sistema passano dall'helper privilegiato (`helper.md`).
+- **Modelli**: ogni risultato è un nodo di un albero con figli ordinati e dimensione aggregata.
 
 ## Indice
 | File | Modulo |
@@ -31,4 +22,3 @@ Queste specifiche descrivono **cosa** fa CleanMyMac 5, modulo per modulo, così 
 | `malware.md` | Tipi di regole e categorie di rilevamento |
 | `helper.md` | Operazioni privilegiate |
 | `protection-upgrade.md` | Piano M7: persistenza completa, processi e risorse, YARA, postura, quarantena |
-| `dynamic-capture.md` | Procedura di cattura dinamica |

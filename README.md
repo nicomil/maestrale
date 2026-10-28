@@ -1,8 +1,10 @@
 # MacCleaner
 
-Un'app macOS indipendente e open source, scritta in Swift 6 e SwiftUI, che replica le funzioni di CleanMyMac 5: pulizia, spazio, applicazioni, protezione e velocità. Nessun abbonamento, nessuna telemetria, nessun demone sempre acceso: ogni operazione parte da un clic, viene mostrata prima di essere eseguita e finisce nel log.
+Un'app macOS indipendente e open source, scritta in Swift 6 e SwiftUI, che riunisce in una sola finestra pulizia, spazio, applicazioni, protezione e velocità del Mac. Nessun abbonamento, nessuna telemetria, nessun demone sempre acceso: ogni operazione parte da un clic, viene mostrata prima di essere eseguita e finisce nel log.
 
 > Sito di presentazione con screenshot: **https://nicomil.github.io/maccleaner/**
+>
+> **Scarica**: [MacCleaner.dmg (ultima versione)](https://github.com/nicomil/maccleaner/releases/latest) · macOS 14 o successivo
 
 ![Smart Care](docs/shots/01-smart-care.png)
 
@@ -63,8 +65,19 @@ MacCleaner.app (SwiftUI)
 - Ogni modulo implementa `CleanerModule`: produce un `ScanReport` di categorie e voci con dimensione, rischio e preselezione. L'interfaccia è la stessa per tutti.
 - `SafeRemover` è l'unico punto che rimuove file. Accetta solo percorsi dentro le cartelle consentite, risolve i symlink prima del controllo, rifiuta i file protetti da SIP e registra tutto in `~/Library/Logs/MacCleaner/operations.log`.
 - Le operazioni da amministratore sono un elenco chiuso (`AdminOperation`). Dopo la password, la shell di root copia `mchelper` in una cartella scrivibile solo da root, ne verifica lo SHA-256 e lo esegue. L'helper apre ogni cartella partendo da `/` senza seguire symlink e lavora relativamente al descrittore aperto (`PinnedFileSystem`), quindi uno scambio di cartelle mentre la finestra della password è aperta fa fallire l'operazione invece di spostarla altrove.
-- Le specifiche funzionali in `docs/spec/` vengono da uno studio di CleanMyMac 5.7.2 (analisi statica con rea e Ghidra, cattura dinamica con `fs_usage`). Non contengono codice, testi o asset di MacPaw: le regole sono riscritte da zero sulla conoscenza pubblica di macOS.
+- Le specifiche funzionali in `docs/spec/` descrivono ogni modulo: cosa cerca, cosa preseleziona, cosa non tocca mai. Le regole sono scritte sulla conoscenza pubblica di macOS (percorsi di cache e log, launchd, Launch Services, TCC, XProtect).
 - L'ultimo ciclo di lavoro è documentato con il metodo BMAD in `docs/bmad/` (brief, PRD, architettura, storie, QA).
+
+## Installazione dal DMG
+
+1. Scarica il DMG dall'[ultima release](https://github.com/nicomil/maccleaner/releases/latest) e trascina MacCleaner in Applicazioni.
+2. L'app è firmata ad-hoc e non notarizzata: al primo avvio macOS la blocca. Clic destro sull'app → **Apri** → **Apri** (una volta sola), oppure da Terminale:
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/MacCleaner.app
+   ```
+3. Concedi l'**Accesso completo al disco** (vedi sotto): senza, molte cartelle non sono leggibili.
+
+Ogni DMG ha accanto il file `.sha256` per verificarlo. Per costruirlo da soli: `scripts/make-dmg.sh` (produce `build/dist/MacCleaner-<versione>.dmg`).
 
 ## Build, test e installazione
 
@@ -125,7 +138,7 @@ Principi validi ovunque:
 
 | Milestone | Stato |
 |---|---|
-| Specifiche da CleanMyMac 5 (analisi statica e dinamica) | fatto |
+| Specifiche funzionali dei moduli | fatto |
 | M1 core, pulizia sistema, cestini | fatto |
 | M2 Space Lens, file grandi e vecchi, duplicati, immagini simili | fatto |
 | M3 disinstallazione, avanzi, aggiornamenti | fatto |

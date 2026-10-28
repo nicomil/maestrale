@@ -1,6 +1,5 @@
 # Helper privilegiato
 
-Componenti CMM: `Contents/Library/LaunchServices/com.macpaw.CleanMyMac5.Agent`, `PrivilegedOperationsPerformerService`, `PrivilegedRoutines`, `IPCProtocol`.
 
 ## Cosa fa quello di CMM
 - Installazione con autorizzazione (`authorizeWithPrompt:includeExecuteRights:`, `enableAgentWithBundleIdentifier:authorization:`) e rimozione (`uninstallPrivilegedAgentWithPrompt:bundleIdentifier:`).

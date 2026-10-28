@@ -1,7 +1,7 @@
 # Brief (Analyst)
 
 ## Contesto
-MacCleaner è un'app macOS personale (SwiftUI, Swift 6, macOS 14+) che replica le funzioni di CleanMyMac 5. Dopo la milestone M7 l'utente l'ha usata per una giornata e ha riportato sei problemi. Questo documento li ricostruisce con le prove trovate nel codice e nel registro `~/Library/Logs/MacCleaner/operations.log`.
+MacCleaner è un'app macOS (SwiftUI, Swift 6, macOS 14+) per pulizia, spazio, applicazioni, protezione e velocità. Dopo la milestone M7 l'utente l'ha usata per una giornata e ha riportato sei problemi. Questo documento li ricostruisce con le prove trovate nel codice e nel registro `~/Library/Logs/MacCleaner/operations.log`.
 
 ## Problemi e cause
 

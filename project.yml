@@ -35,10 +35,12 @@ targets:
       properties:
         CFBundleDisplayName: MacCleaner
         LSApplicationCategoryType: public.app-category.utilities
-        NSHumanReadableCopyright: Uso personale
+        NSHumanReadableCopyright: © 2026 Nicola Milella · MIT
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: it.nico.maccleaner
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
         # Not sandboxed: the app must read and clean folders across the home.
         ENABLE_APP_SANDBOX: NO
         ENABLE_HARDENED_RUNTIME: YES
