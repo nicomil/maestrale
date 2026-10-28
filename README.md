@@ -41,7 +41,7 @@ Un'app macOS indipendente e open source, scritta in Swift 6 e SwiftUI, che repli
 - **Protezione**: 14 controlli (elementi di login e launch agent, estensioni di sistema e kernel, estensioni e dirottamento dei browser, cron e shell, configurazione di rete, profili, TCC, certificati radice, XProtect, firme delle app, installazioni recenti, postura di sicurezza), più la scansione YARA con regole fornite dall'utente e una quarantena con ripristino.
 - **Attività**: processi che consumano CPU, memoria, energia e rete.
 - **Privacy**: cronologia, cookie e dati dei browser, elementi recenti, reti Wi-Fi ricordate, permessi delle app.
-- **Prestazioni**: libera la RAM, elimina le istantanee locali di Time Machine, svuota la cache DNS, reindicizza Spotlight, ripara i permessi, velocizza Mail. Ogni scheda riporta cosa è cambiato davvero (per esempio "File in cache: 3,1 GB → 0,4 GB").
+- **Prestazioni**: libera la RAM, elimina le istantanee locali di Time Machine, svuota la cache DNS, reindicizza Spotlight, ripara i permessi, velocizza Mail. Ogni scheda riporta cosa è cambiato davvero (per esempio "File in cache: 4,28 GB → 1,29 GB · liberati 2,99 GB").
 
 ### Trasversali
 - **Smart Care**: una scansione che tocca pulizia, protezione, aggiornamenti e prestazioni, con riepilogo.
