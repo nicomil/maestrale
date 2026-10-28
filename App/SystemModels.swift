@@ -46,7 +46,11 @@ final class PrivacyModel {
         let chosen = items.filter { selection.contains($0.id) }
         var cleaned = 0
         var problems: [String] = []
-        for item in chosen {
+        let center = ProgressCenter.shared
+        center.begin(dryRun ? "Controllo della privacy" : "Pulizia della privacy", total: chosen.count)
+        defer { center.end() }
+        for (index, item) in chosen.enumerated() {
+            center.update(completed: index, detail: "\(item.owner): \(item.kind.title)")
             do {
                 try await PrivacyScanner().clean(item, dryRun: dryRun)
                 cleaned += 1
@@ -58,7 +62,10 @@ final class PrivacyModel {
         }
         message = (dryRun ? "Si pulirebbero \(cleaned) voci" : "Pulite \(cleaned) voci")
             + (problems.isEmpty ? "" : " · " + problems.joined(separator: ", "))
-        if !dryRun { await scan() }
+        if !dryRun {
+            center.update(completed: chosen.count, detail: "Nuova scansione…")
+            await scan()
+        }
     }
 
     func forget(_ network: String) async {
@@ -126,6 +133,9 @@ final class PerformanceModel {
 
     func run(_ task: MaintenanceTask) async {
         running.insert(task.id)
+        let center = ProgressCenter.shared
+        center.begin(task.title, detail: task.adminOperation != nil ? "In corso… macOS chiede la password" : "In corso…")
+        defer { center.end() }
         do {
             let summary = try await task.run()
             results[task.id] = .done(summary, Date())

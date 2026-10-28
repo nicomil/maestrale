@@ -247,3 +247,31 @@ struct TempFolder {
         #expect(AppModel.changedCopyGroups(report, selected: [copy], identical: false).groups == 1)
     }
 }
+
+@MainActor
+struct ProgressCenterTests {
+    @Test func operationDescribesCountsAndFraction() {
+        var op = ProgressCenter.Operation(title: "Svuotamento del Cestino", total: 4, bytesTotal: 4_000_000)
+        #expect(op.fraction == 0)
+        op.completed = 1
+        op.bytesDone = 1_000_000
+        #expect(op.fraction == 0.25)
+        #expect(op.counts?.hasPrefix("1 di 4 elementi · ") == true)
+        let indeterminate = ProgressCenter.Operation(title: "Libera RAM")
+        #expect(indeterminate.fraction == nil)
+        #expect(indeterminate.counts == nil)
+    }
+
+    @Test func stopIsOnlyAcceptedWhenTheOperationAllowsIt() {
+        let center = ProgressCenter.shared
+        center.begin("Pulizia", total: 2, canStop: false)
+        center.stop()
+        #expect(!center.stopRequested)
+        center.begin("Pulizia", total: 2, canStop: true)
+        center.stop()
+        #expect(center.stopRequested)
+        #expect(!center.continuation()())
+        center.end()
+        #expect(center.current == nil)
+    }
+}

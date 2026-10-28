@@ -161,6 +161,34 @@ struct Sandbox {
         #expect(FileManager.default.fileExists(atPath: single.path))
     }
 
+    /// Progress is reported before the first item and after each one, with the bytes freed so far.
+    @Test func progressReportsEveryItem() throws {
+        let box = try Sandbox(); defer { box.remove() }
+        let a = try box.file("a.txt", in: box.allowed)
+        let b = try box.file("b.txt", in: box.allowed)
+        final class Seen: @unchecked Sendable { var steps: [(Int, Int, URL?)] = [] }
+        let seen = Seen()
+        let outcomes = remover(box, .delete).remove([a, b]) { seen.steps.append(($0.completed, $0.total, $0.next)) }
+        #expect(outcomes.count == 2)
+        #expect(seen.steps.map(\.0) == [0, 1, 2])
+        #expect(seen.steps.map(\.1) == [2, 2, 2])
+        #expect(seen.steps.map(\.2) == [a, b, nil])
+    }
+
+    /// Stopping leaves the remaining items untouched and out of the outcomes.
+    @Test func removalStopsWhenAsked() throws {
+        let box = try Sandbox(); defer { box.remove() }
+        let a = try box.file("a.txt", in: box.allowed)
+        let b = try box.file("b.txt", in: box.allowed)
+        final class Flag: @unchecked Sendable { var goOn = true }
+        let flag = Flag()
+        let outcomes = remover(box, .delete).remove([a, b], progress: { if $0.completed == 1 { flag.goOn = false } },
+                                                    shouldContinue: { flag.goOn })
+        #expect(outcomes.count == 1)
+        #expect(!FileManager.default.fileExists(atPath: a.path))
+        #expect(FileManager.default.fileExists(atPath: b.path))
+    }
+
     /// Unlocking never reaches outside the allowed folders: the check comes first.
     @Test func unlockingDoesNotTouchItemsOutsideAllowedRoots() throws {
         let box = try Sandbox(); defer { box.remove() }

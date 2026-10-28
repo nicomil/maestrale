@@ -44,6 +44,7 @@ Un'app macOS indipendente e open source, scritta in Swift 6 e SwiftUI, che repli
 
 ### Trasversali
 - **Smart Care**: una scansione che tocca pulizia, protezione, aggiornamenti e prestazioni, con riepilogo.
+- Avanzamento di ogni operazione lunga in un banner comune a tutte le schermate: elementi e byte fatti sul totale, elemento in corso, tempo trascorso, fase (password, nuova scansione) e pulsante "Interrompi" che si ferma dopo l'elemento corrente.
 - Monitor nella barra dei menu, scansioni pianificate, modalità predefinita (Cestino, eliminazione, prova), filtro e "seleziona tutto / deseleziona tutto" in ogni elenco.
 - `mccli`: la stessa logica di scansione da Terminale, in sola lettura.
 

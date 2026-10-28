@@ -215,7 +215,7 @@ final class AppModel {
     }
 
     func selectedSize(in id: String) -> Int64 {
-        selectedItems(in: id).reduce(0) { $0 + $1.size }
+        selectedItems(in: id).reduce(Int64(0)) { $0 + $1.size }
     }
 
     /// Groups of copies where every item is selected: cleaning them would
@@ -264,9 +264,20 @@ final class AppModel {
         let remover = SafeRemover(allowedRoots: module.allowedRoots, mode: mode, unlocksItems: id == TrashModule.id)
         let userItems = items.filter { !$0.needsHelper }
         let adminItems = items.filter(\.needsHelper)
-        var outcomes = await Task.detached { remover.remove(userItems.map(\.url)) }.value
+        let center = ProgressCenter.shared
+        center.begin(id == TrashModule.id ? "Svuotamento del Cestino" : "Pulizia: \(module.title)",
+                     total: items.count, bytesTotal: items.reduce(Int64(0)) { $0 + $1.size }, canStop: true)
+        defer { center.end() }
+        let reportProgress = center.removalReporter(verb: Self.verb(for: mode), sizes: Self.sizes(of: items))
+        let goOn = center.continuation()
+        let userURLs = userItems.map(\.url)
+        var outcomes = await Task.detached { remover.remove(userURLs, progress: reportProgress, shouldContinue: goOn) }.value
+        let interrupted = outcomes.count < userItems.count
         var adminNote = ""
-        if !adminItems.isEmpty {
+        if interrupted {
+            adminNote = " · interrotto: \(items.count - outcomes.count) elementi non toccati"
+        } else if !adminItems.isEmpty {
+            center.phase("Elementi di sistema: macOS chiede la password…")
             let result = await Self.removeAsAdmin(adminItems, mode: mode)
             outcomes += result.outcomes
             adminNote = result.note
@@ -279,8 +290,24 @@ final class AppModel {
         }
         let outcome = CleanOutcome(summary: Self.summary(outcomes, mode: mode) + adminNote, mode: mode)
         isCleaning = false
-        if mode != .dryRun { await scan(id) }
+        if mode != .dryRun {
+            center.update(completed: items.count, detail: "Nuova scansione…")
+            await scan(id)
+        }
         modules[id]?.lastClean = outcome
+    }
+
+    /// What the progress banner says is happening to each item.
+    static func verb(for mode: RemovalMode) -> String {
+        switch mode {
+        case .delete: "Elimino"
+        case .trash: "Sposto nel Cestino"
+        case .dryRun: "Controllo"
+        }
+    }
+
+    static func sizes(of items: [ScanItem]) -> [URL: Int64] {
+        Dictionary(items.map { ($0.url, $0.size) }, uniquingKeysWith: { first, _ in first })
     }
 
     /// Selected items of copy groups that are no longer safe to clean.
@@ -430,11 +457,21 @@ final class SpaceLensModel {
     func deselectAll() { selection = [] }
 
     func trashSelected(mode: RemovalMode) async {
-        let urls = selectedNodes().map(\.url)
+        let nodes = selectedNodes()
+        let urls = nodes.map(\.url)
         guard !urls.isEmpty else { return }
+        let center = ProgressCenter.shared
+        center.begin("Rimozione da Space Lens", total: urls.count,
+                     bytesTotal: nodes.reduce(Int64(0)) { $0 + $1.size }, canStop: true)
+        defer { center.end() }
+        let sizes = Dictionary(nodes.map { ($0.url, $0.size) }, uniquingKeysWith: { first, _ in first })
+        let report = center.removalReporter(verb: AppModel.verb(for: mode), sizes: sizes)
+        let goOn = center.continuation()
         let remover = SafeRemover(allowedRoots: allowedRoots, mode: mode)
-        let outcomes = await Task.detached { remover.remove(urls) }.value
+        let outcomes = await Task.detached { remover.remove(urls, progress: report, shouldContinue: goOn) }.value
+        let untouched = urls.count - outcomes.count
         lastCleanSummary = AppModel.summary(outcomes, mode: mode)
+            + (untouched > 0 ? " · interrotto: \(untouched) elementi non toccati" : "")
         selection = []
         if mode != .dryRun, let rootURL = root?.url { scan(rootURL) }
     }

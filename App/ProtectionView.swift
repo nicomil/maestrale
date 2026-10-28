@@ -281,6 +281,9 @@ final class ProtectionModel {
     /// otherwise moves the file to the Trash (with the password when it is a
     /// system file). A launch item that does not stop is left in place.
     func remove(_ finding: Finding) async {
+        let center = ProgressCenter.shared
+        center.begin("Rimozione: \(finding.title)", detail: "Sposto nel Cestino e ricontrollo…")
+        defer { center.end() }
         if let item = finding.launchItem {
             do {
                 try await Task.detached { try LaunchItemsScanner().remove(item) }.value

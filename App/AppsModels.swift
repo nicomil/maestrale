@@ -107,6 +107,11 @@ final class UninstallerModel {
         guard !chosen.isEmpty else { return }
         isWorking = true
         defer { isWorking = false }
+        let center = ProgressCenter.shared
+        center.begin(reset ? "Reset di \(app.name)" : "Disinstallazione di \(app.name)", total: chosen.count,
+                     bytesTotal: chosen.reduce(Int64(0)) { $0 + $1.size }, canStop: true,
+                     detail: mode == .dryRun ? nil : "Chiudo \(app.name)…")
+        defer { center.end() }
         if mode != .dryRun, !(await quit(app)) {
             message = "Chiudi \(app.name) e riprova."
             return
@@ -114,12 +119,18 @@ final class UninstallerModel {
         guard generation == selectionGeneration else { return }
         let urls = chosen.filter { !$0.needsHelper }.map(\.url)
         let remover = SafeRemover(allowedRoots: AllowedRoots.appSupport(), mode: mode)
-        var outcomes = await Task.detached { remover.remove(urls) }.value
+        let sizes = Dictionary(chosen.map { ($0.url, $0.size) }, uniquingKeysWith: { first, _ in first })
+        let report = center.removalReporter(verb: AppModel.verb(for: mode), sizes: sizes)
+        let goOn = center.continuation()
+        var outcomes = await Task.detached { remover.remove(urls, progress: report, shouldContinue: goOn) }.value
         var note = ""
+        let interrupted = outcomes.count < urls.count
+        if interrupted { note = " · interrotto: \(chosen.count - outcomes.count) elementi non toccati" }
         // What failed for permissions under a system folder gets one more try with the password.
-        let retry = mode == .dryRun ? [] : Self.retryableAsAdmin(outcomes, items: chosen)
-        let adminItems = chosen.filter(\.needsHelper) + retry
+        let retry = mode == .dryRun || interrupted ? [] : Self.retryableAsAdmin(outcomes, items: chosen)
+        let adminItems = interrupted ? [] : chosen.filter(\.needsHelper) + retry
         if !adminItems.isEmpty {
+            center.phase("Elementi di sistema: macOS chiede la password…")
             let result = await removeAsAdmin(adminItems, mode)
             let retried = Set(result.outcomes.map(\.url))
             outcomes.removeAll { retried.contains($0.url) }
@@ -137,6 +148,7 @@ final class UninstallerModel {
                 fileSelection = []
             } else {
                 let note = message
+                center.phase("Rileggo i file dell'app…")
                 await select(app)
                 message = note
             }

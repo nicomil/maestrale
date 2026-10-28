@@ -29,6 +29,27 @@ public struct RemovalOutcome: Sendable {
     }
 }
 
+/// Where a removal stands: reported before the first item and after each one.
+public struct RemovalProgress: Sendable {
+    /// Items handled so far, removed or refused.
+    public let completed: Int
+    public let total: Int
+    /// Bytes of the items removed so far.
+    public let bytesDone: Int64
+    /// The item just handled, nil before the first one.
+    public let last: RemovalOutcome?
+    /// The item about to be handled, nil after the last one.
+    public let next: URL?
+
+    public init(completed: Int, total: Int, bytesDone: Int64, last: RemovalOutcome?, next: URL?) {
+        self.completed = completed
+        self.total = total
+        self.bytesDone = bytesDone
+        self.last = last
+        self.next = next
+    }
+}
+
 /// Removes files only inside a fixed set of folders.
 ///
 /// Every path is resolved (symlinks included) before the check, so a link that
@@ -75,12 +96,27 @@ public struct SafeRemover: Sendable {
     }
 
     /// Removes the given items and returns one outcome per item.
-    public func remove(_ urls: [URL]) -> [RemovalOutcome] {
-        urls.map { url in
+    ///
+    /// `progress` is called before the first item and after each one, so a
+    /// screen can show what is being removed and how far along it is. When
+    /// `shouldContinue` returns false the remaining items are left untouched
+    /// and the outcomes list is shorter than `urls`.
+    public func remove(_ urls: [URL],
+                       progress: (@Sendable (RemovalProgress) -> Void)? = nil,
+                       shouldContinue: (@Sendable () -> Bool)? = nil) -> [RemovalOutcome] {
+        var outcomes: [RemovalOutcome] = []
+        var bytesDone: Int64 = 0
+        progress?(RemovalProgress(completed: 0, total: urls.count, bytesDone: 0, last: nil, next: urls.first))
+        for (index, url) in urls.enumerated() {
+            if let shouldContinue, !shouldContinue() { break }
             let outcome = removeOne(url)
             log?.record(mode: mode, outcome: outcome)
-            return outcome
+            outcomes.append(outcome)
+            bytesDone += (try? outcome.result.get()) ?? 0
+            progress?(RemovalProgress(completed: index + 1, total: urls.count, bytesDone: bytesDone,
+                                      last: outcome, next: urls.indices.contains(index + 1) ? urls[index + 1] : nil))
         }
+        return outcomes
     }
 
     private func removeOne(_ url: URL) -> RemovalOutcome {

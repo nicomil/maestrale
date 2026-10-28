@@ -25,7 +25,8 @@ struct ContentView: View {
             }
             .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 250)
         } detail: {
-            switch destination {
+            Group {
+                switch destination {
             case .smartCare?:
                 SmartCareView(destination: $destination)
             case .module(let id)?:
@@ -46,6 +47,11 @@ struct ContentView: View {
                 ActivityView()
             case nil:
                 ContentUnavailableView("Scegli una funzione", systemImage: "sparkles")
+                }
+            }
+            .overlay(alignment: .bottom) {
+                ProgressBanner()
+                    .animation(.easeInOut(duration: 0.2), value: ProgressCenter.shared.current != nil)
             }
         }
         .sheet(isPresented: Binding(get: { !didShowWelcome }, set: { if !$0 { didShowWelcome = true } })) {
