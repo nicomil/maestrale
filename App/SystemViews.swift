@@ -14,6 +14,12 @@ struct PrivacyView: View {
                     Text("\(privacy.items.count) tipi di dati trovati").font(.title2.bold())
                 }
                 Spacer()
+                if privacy.hasScanned && !privacy.items.isEmpty {
+                    Button("Seleziona tutto") { privacy.selectAll() }
+                        .disabled(privacy.selection.count == privacy.items.count)
+                    Button("Deseleziona tutto") { privacy.deselectAll() }
+                        .disabled(privacy.selection.isEmpty)
+                }
                 if privacy.isScanning { ProgressView().controlSize(.small) }
                 Button(privacy.hasScanned ? "Scansiona di nuovo" : "Scansiona") { Task { await privacy.scan() } }
                     .disabled(privacy.isScanning)
@@ -156,9 +162,9 @@ struct PerformanceView: View {
             Text(task.explanation).font(.callout).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
-            HStack {
+            HStack(alignment: .bottom) {
                 if let result = performance.results[task.id] {
-                    Text(result).font(.caption).foregroundStyle(.secondary)
+                    resultLabel(result)
                 }
                 Spacer()
                 if performance.running.contains(task.id) {
@@ -173,6 +179,23 @@ struct PerformanceView: View {
         .padding()
         .frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    /// The outcome of a task: what it did, why it was skipped, or what went wrong.
+    private func resultLabel(_ result: PerformanceModel.MaintenanceResult) -> some View {
+        let (icon, color, text): (String, Color, String) = switch result {
+        case .done(let summary, let date):
+            ("checkmark.circle.fill", .green, "\(summary)\nFatto alle \(date.formatted(date: .omitted, time: .shortened))")
+        case .skipped(let why): ("minus.circle.fill", .secondary, why)
+        case .failed(let why): ("exclamationmark.triangle.fill", .orange, "Non riuscito: \(why)")
+        }
+        return Label {
+            Text(text).font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+        } icon: {
+            Image(systemName: icon).foregroundStyle(color)
+        }
+        .help(text)
     }
 
     private func launchRow(_ item: LaunchItem) -> some View {

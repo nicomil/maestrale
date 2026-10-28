@@ -38,6 +38,10 @@ final class PrivacyModel {
         hasScanned = true
     }
 
+    func selectAll() { selection = Set(items.map(\.id)) }
+
+    func deselectAll() { selection = [] }
+
     func clean(dryRun: Bool) async {
         let chosen = items.filter { selection.contains($0.id) }
         var cleaned = 0
@@ -76,7 +80,14 @@ final class PerformanceModel {
     var launchItems: [LaunchItem] = []
     var tasks: [MaintenanceTask] = MaintenanceTask.available()
     var running: Set<String> = []
-    var results: [String: String] = [:]
+    var results: [String: MaintenanceResult] = [:]
+
+    /// What a maintenance card shows after running.
+    enum MaintenanceResult: Equatable {
+        case done(String, Date)
+        case skipped(String)
+        case failed(String)
+    }
     var hasScanned = false
     var message: String?
 
@@ -116,14 +127,22 @@ final class PerformanceModel {
     func run(_ task: MaintenanceTask) async {
         running.insert(task.id)
         do {
-            try await task.run()
-            results[task.id] = "Fatto alle \(Date().formatted(date: .omitted, time: .shortened))"
+            let summary = try await task.run()
+            results[task.id] = .done(summary, Date())
         } catch AdminError.cancelled {
             results[task.id] = nil
+        } catch MaintenanceError.nothingToDo(let why) {
+            results[task.id] = .skipped(why)
+        } catch AdminError.failed(let message) {
+            results[task.id] = .failed(message.isEmpty ? "il comando è uscito con un errore" : message)
+        } catch AdminError.refused(let why) {
+            results[task.id] = .failed(why)
         } catch PrivacyError.browserRunning(let name) {
-            results[task.id] = "Chiudi \(name) e riprova"
+            results[task.id] = .failed("Chiudi \(name) e riprova")
+        } catch PrivacyError.failed(let why) {
+            results[task.id] = .failed(why)
         } catch {
-            results[task.id] = "Non riuscito"
+            results[task.id] = .failed(error.localizedDescription)
         }
         running.remove(task.id)
     }

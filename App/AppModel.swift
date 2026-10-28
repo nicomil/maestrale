@@ -186,6 +186,34 @@ final class AppModel {
         return report.allItems.filter { selection.contains($0.url) }
     }
 
+    /// The mode a clean really runs with. "Move to the Trash" means nothing
+    /// for what is already in the Trash: emptying it deletes for good.
+    nonisolated static func effectiveMode(moduleID: String, chosen: RemovalMode) -> RemovalMode {
+        moduleID == TrashModule.id && chosen == .trash ? .delete : chosen
+    }
+
+    func effectiveMode(in id: String) -> RemovalMode {
+        Self.effectiveMode(moduleID: id, chosen: removalMode)
+    }
+
+    /// Items of a report that the filter of the results list shows.
+    nonisolated static func visibleItems(_ report: ScanReport, matching filter: String) -> [ScanItem] {
+        filter.isEmpty ? report.allItems
+            : report.allItems.filter { $0.url.path.localizedCaseInsensitiveContains(filter) }
+    }
+
+    /// Selects every visible item, except the copy that must stay in each group.
+    func selectAll(in id: String, matching filter: String = "") {
+        guard let report = modules[id]?.report else { return }
+        let kept = Set(report.categories.compactMap(\.keep))
+        selection.formUnion(Self.visibleItems(report, matching: filter).map(\.url).filter { !kept.contains($0) })
+    }
+
+    func deselectAll(in id: String, matching filter: String = "") {
+        guard let report = modules[id]?.report else { return }
+        selection.subtract(Self.visibleItems(report, matching: filter).map(\.url))
+    }
+
     func selectedSize(in id: String) -> Int64 {
         selectedItems(in: id).reduce(0) { $0 + $1.size }
     }
@@ -216,7 +244,7 @@ final class AppModel {
         }
         modules[id]?.error = nil
         isCleaning = true
-        let mode = removalMode
+        let mode = effectiveMode(in: id)
         // Files may have changed since the scan: a group of copies is skipped
         // unless a copy that stays is still there (and, for duplicates, identical).
         let selectedURLs = Set(items.map(\.url))
@@ -232,7 +260,8 @@ final class AppModel {
             items.removeAll { RuleEngine.isProtected($0.url, by: running) }
             skippedRunning = before - items.count
         }
-        let remover = SafeRemover(allowedRoots: module.allowedRoots, mode: mode)
+        // Only the Trash unlocks items: a locked file is what keeps it from emptying.
+        let remover = SafeRemover(allowedRoots: module.allowedRoots, mode: mode, unlocksItems: id == TrashModule.id)
         let userItems = items.filter { !$0.needsHelper }
         let adminItems = items.filter(\.needsHelper)
         var outcomes = await Task.detached { remover.remove(userItems.map(\.url)) }.value
@@ -392,6 +421,13 @@ final class SpaceLensModel {
         guard let current else { return [] }
         return current.children.filter { selection.contains($0.url) && !$0.isAggregate }
     }
+
+    /// Everything in the open folder except the "small files" aggregate, which cannot be removed.
+    var selectableNodes: [DiskNode] { current?.children.filter { !$0.isAggregate } ?? [] }
+
+    func selectAll() { selection = Set(selectableNodes.map(\.url)) }
+
+    func deselectAll() { selection = [] }
 
     func trashSelected(mode: RemovalMode) async {
         let urls = selectedNodes().map(\.url)

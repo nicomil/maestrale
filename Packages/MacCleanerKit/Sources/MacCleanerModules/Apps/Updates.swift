@@ -11,11 +11,41 @@ public struct AppUpdate: Identifiable, Sendable, Hashable {
     public var id: URL { app.url }
     public let app: InstalledApp
     public let availableVersion: String
+    /// The build number of the update (`sparkle:version`), when the feed gives one.
+    public let availableBuild: String?
     public let source: UpdateSource
     /// Release notes or store page.
     public let infoURL: URL?
     /// Homebrew cask token, when the source is Homebrew.
     public let caskToken: String?
+
+    public init(app: InstalledApp, availableVersion: String, availableBuild: String? = nil, source: UpdateSource,
+                infoURL: URL?, caskToken: String?) {
+        self.app = app
+        self.availableVersion = availableVersion
+        self.availableBuild = availableBuild
+        self.source = source
+        self.infoURL = infoURL
+        self.caskToken = caskToken
+    }
+
+    /// Whether the update is still due for the app as it is on disk now: the
+    /// same comparison the check made, repeated after the user updated.
+    public func isStillPending(for installed: InstalledApp) -> Bool {
+        switch source {
+        case .sparkle:
+            if let availableBuild {
+                return Version.isNewer(availableBuild, than: installed.build)
+                    && !Version.isNewer(installed.version, than: availableVersion)
+            }
+            return Version.isNewer(availableVersion, than: installed.version)
+        case .appStore:
+            return Version.isNewer(availableVersion, than: installed.version)
+        case .homebrew:
+            // "latest" and other non-numeric cask versions cannot be compared: trust brew.
+            return Version.normalized(availableVersion).isEmpty || Version.isNewer(availableVersion, than: installed.version)
+        }
+    }
 }
 
 /// Compares version strings numerically ("1.10" > "1.9", "2.0.1" > "2.0").
@@ -141,7 +171,8 @@ public struct UpdateChecker: Sendable {
                         && (newest.shortVersion.map { !Version.isNewer(app.version, than: $0) } ?? true)
                     guard newer else { return nil }
                     return AppUpdate(app: app, availableVersion: newest.shortVersion ?? newest.version,
-                                     source: .sparkle, infoURL: newest.releaseNotes, caskToken: nil)
+                                     availableBuild: newest.version, source: .sparkle,
+                                     infoURL: newest.releaseNotes, caskToken: nil)
                 }
             }
             var result: [AppUpdate] = []
@@ -152,6 +183,8 @@ public struct UpdateChecker: Sendable {
 
     func appStoreUpdates(_ apps: [InstalledApp]) async -> [AppUpdate] {
         guard !apps.isEmpty else { return [] }
+        let system = ProcessInfo.processInfo.operatingSystemVersion
+        let systemVersion = "\(system.majorVersion).\(system.minorVersion).\(system.patchVersion)"
         var result: [AppUpdate] = []
         for batch in stride(from: 0, to: apps.count, by: 50).map({ Array(apps[$0..<min($0 + 50, apps.count)]) }) {
             let ids = batch.map(\.bundleID).joined(separator: ",")
@@ -159,7 +192,8 @@ public struct UpdateChecker: Sendable {
                   let data = try? await Self.fetch(url) else { continue }
             let found = Self.parseLookup(data)
             for app in batch {
-                guard let entry = found[app.bundleID], Version.isNewer(entry.version, than: app.version) else { continue }
+                guard let entry = found[app.bundleID], entry.isInstallable(on: systemVersion),
+                      Version.isNewer(entry.version, than: app.version) else { continue }
                 result.append(AppUpdate(app: app, availableVersion: entry.version, source: .appStore,
                                         infoURL: entry.page, caskToken: nil))
             }
@@ -167,13 +201,30 @@ public struct UpdateChecker: Sendable {
         return result
     }
 
-    static func parseLookup(_ data: Data) -> [String: (version: String, page: URL?)] {
+    /// One result of the iTunes lookup.
+    public struct StoreEntry: Sendable, Equatable {
+        public let version: String
+        /// The app in the App Store app (`macappstore://`), or the web page.
+        public let page: URL?
+        public let minimumOSVersion: String?
+
+        /// The store only offers the update on a system new enough for it:
+        /// listing it elsewhere would send the user to a page with no update.
+        public func isInstallable(on systemVersion: String) -> Bool {
+            guard let minimumOSVersion else { return true }
+            return !Version.isNewer(minimumOSVersion, than: systemVersion)
+        }
+    }
+
+    public static func parseLookup(_ data: Data) -> [String: StoreEntry] {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let results = json["results"] as? [[String: Any]] else { return [:] }
-        var map: [String: (String, URL?)] = [:]
+        var map: [String: StoreEntry] = [:]
         for entry in results {
             guard let id = entry["bundleId"] as? String, let version = entry["version"] as? String else { continue }
-            map[id] = (version, (entry["trackViewUrl"] as? String).flatMap(URL.init(string:)))
+            let web = (entry["trackViewUrl"] as? String).flatMap(URL.init(string:))
+            let store = (entry["trackId"] as? NSNumber).flatMap { URL(string: "macappstore://apps.apple.com/app/id\($0.int64Value)") }
+            map[id] = StoreEntry(version: version, page: store ?? web, minimumOSVersion: entry["minimumOsVersion"] as? String)
         }
         return map
     }
@@ -189,8 +240,12 @@ public struct UpdateChecker: Sendable {
         for cask in outdated {
             for appName in appNames[cask.token] ?? [] {
                 guard let app = apps.first(where: { $0.url.lastPathComponent == appName }) else { continue }
-                result.append(AppUpdate(app: app, availableVersion: cask.version, source: .homebrew,
-                                        infoURL: nil, caskToken: cask.token))
+                let update = AppUpdate(app: app, availableVersion: cask.version, source: .homebrew,
+                                       infoURL: nil, caskToken: cask.token)
+                // `--greedy` also lists casks whose app updated itself: brew's
+                // record is old, the app is not. Only what is really older counts.
+                guard update.isStillPending(for: app) else { continue }
+                result.append(update)
             }
         }
         return result

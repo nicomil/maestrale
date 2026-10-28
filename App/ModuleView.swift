@@ -1,16 +1,17 @@
 import MacCleanerCore
+import MacCleanerModules
 import SwiftUI
 
 /// What each list-based module does, shown under its title.
 let moduleDescriptions: [String: String] = [
     "system-junk": "Cache, log e file temporanei che le app e macOS ricreano da soli.",
-    "trash": "Il Cestino e i cestini dei dischi esterni. Svuotarli è definitivo.",
+    "trash": "Il Cestino e i cestini dei dischi esterni. Svuotarli è definitivo: gli elementi non passano da nessun'altra parte.",
     "mail-attachments": "Copie locali degli allegati degli account IMAP ed Exchange: Mail li riscarica dal server quando apri il messaggio. Non usarlo con account POP. Mail deve essere chiusa.",
     "installers": "Immagini disco e pacchetti in Download, Scrivania e Documenti, soprattutto di app già installate.",
     "large-old-files": "I file più grandi delle tue cartelle e i download che non apri da tempo. Niente è preselezionato.",
     "duplicates": "File identici byte per byte. In ogni gruppo una copia resta sempre; sono preselezionate solo le copie in Download.",
     "similar-images": "Foto quasi uguali (copie ridimensionate, scatti ripetuti). La migliore resta.",
-    "orphan-leftovers": "Dati lasciati da app che non sono più installate. Controlla prima di rimuovere.",
+    "orphan-leftovers": "Cartelle e preferenze di app che non risultano più installate, non in esecuzione e senza elementi di avvio. Gli elementi modificati di recente sono segnati a rischio alto. Niente è preselezionato: controlla prima di rimuovere.",
 ]
 
 /// Scan → review → clean screen shared by every list-based module.
@@ -69,7 +70,14 @@ struct ModuleView: View {
             }
             if let error = state.error { Text(error).foregroundStyle(.red) }
             Spacer()
-            if state.report != nil {
+            if let report = state.report, !report.categories.isEmpty {
+                let visible = AppModel.visibleItems(report, matching: filter)
+                let kept = Set(report.categories.compactMap(\.keep))
+                let selectable = visible.filter { !kept.contains($0.url) }
+                Button("Seleziona tutto") { model.selectAll(in: state.id, matching: filter) }
+                    .disabled(selectable.allSatisfy { model.selection.contains($0.url) })
+                Button("Deseleziona tutto") { model.deselectAll(in: state.id, matching: filter) }
+                    .disabled(!visible.contains { model.selection.contains($0.url) })
                 TextField("Filtra", text: $filter).textFieldStyle(.roundedBorder).frame(width: 160)
             }
             if state.isScanning && state.report != nil {
@@ -90,8 +98,20 @@ struct ModuleView: View {
         let size = model.selectedSize(in: state.id)
         // The filter only hides rows: hidden items that are selected are cleaned too.
         let hidden = filter.isEmpty ? 0 : selected.filter { !$0.url.path.localizedCaseInsensitiveContains(filter) }.count
+        let isTrash = state.id == TrashModule.id
+        let mode = model.effectiveMode(in: state.id)
         return HStack {
-            RemovalModePicker(mode: $model.removalMode)
+            if isTrash {
+                // Moving to the Trash what is in the Trash does nothing: here the
+                // only choices are to delete for good or to only look.
+                Toggle("Solo prova", isOn: Binding(get: { model.removalMode == .dryRun },
+                                                   set: { model.removalMode = $0 ? .dryRun : .trash }))
+                    .toggleStyle(.checkbox)
+                Label("Lo svuotamento è definitivo", systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.secondary)
+            } else {
+                RemovalModePicker(mode: $model.removalMode)
+            }
             if !blocked.isEmpty {
                 Label("Lascia almeno una copia in \(blocked.count) gruppi", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.orange)
@@ -101,19 +121,19 @@ struct ModuleView: View {
                 Label("Alcuni elementi chiedono la password", systemImage: "lock.fill").foregroundStyle(.secondary)
             }
             Spacer()
-            Button("Pulisci \(formatBytes(size))") { confirmClean = true }
+            Button("\(isTrash ? "Svuota" : "Pulisci") \(formatBytes(size))") { confirmClean = true }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(selected.isEmpty || model.isCleaning || !blocked.isEmpty)
-                .confirmationDialog("Pulire \(selected.count) elementi (\(formatBytes(size)))?",
+                .confirmationDialog("\(isTrash ? "Svuotare" : "Pulire") \(selected.count) elementi (\(formatBytes(size)))?",
                                     isPresented: $confirmClean) {
-                    Button(model.removalMode == .delete ? "Elimina definitivamente" : "Pulisci",
-                           role: model.removalMode == .delete ? .destructive : nil) {
+                    Button(mode == .delete ? "Elimina definitivamente" : "Pulisci",
+                           role: mode == .delete ? .destructive : nil) {
                         Task { await model.clean(state.id) }
                     }
                 } message: {
                     Text((hidden > 0 ? "Attenzione: \(hidden) elementi selezionati sono nascosti dal filtro e verranno puliti anche loro. " : "")
-                         + model.removalMode.confirmation
+                         + mode.confirmation
                          + (needsPassword ? " Per gli elementi di sistema macOS chiederà la password di amministratore." : ""))
                 }
         }
@@ -165,14 +185,24 @@ struct CleanBanner: View {
 
 struct RemovalModePicker: View {
     @Binding var mode: RemovalMode
+    /// Short names and no label, for narrow panes.
+    var compact = false
 
     var body: some View {
         Picker("Modalità", selection: $mode) {
-            Text("Sposta nel Cestino").tag(RemovalMode.trash)
-            Text("Prova (non rimuove nulla)").tag(RemovalMode.dryRun)
-            Text("Elimina definitivamente").tag(RemovalMode.delete)
+            Text(compact ? "Nel Cestino" : "Sposta nel Cestino").tag(RemovalMode.trash)
+            Text(compact ? "Solo prova" : "Prova (non rimuove nulla)").tag(RemovalMode.dryRun)
+            Text(compact ? "Elimina" : "Elimina definitivamente").tag(RemovalMode.delete)
         }
+        .labelsHidden(compact)
+        .help(compact ? "Modalità di rimozione" : "")
         .fixedSize()
+    }
+}
+
+private extension View {
+    @ViewBuilder func labelsHidden(_ hidden: Bool) -> some View {
+        if hidden { labelsHidden() } else { self }
     }
 }
 

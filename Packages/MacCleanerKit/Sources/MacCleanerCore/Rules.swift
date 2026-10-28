@@ -57,12 +57,16 @@ public struct RuleEngine: Sendable {
     /// Extra names to skip, e.g. bundle identifiers of running apps.
     public let protectedNames: Set<String>
     public let now: Date
+    /// Keep items of size zero (empty files and folders). Off by default:
+    /// they are noise in a cleaning list, but the Trash must empty them too.
+    public let includeEmptyItems: Bool
 
     public init(home: URL = FileManager.default.homeDirectoryForCurrentUser,
-                protectedNames: Set<String> = [], now: Date = Date()) {
+                protectedNames: Set<String> = [], now: Date = Date(), includeEmptyItems: Bool = false) {
         self.home = home
         self.protectedNames = protectedNames
         self.now = now
+        self.includeEmptyItems = includeEmptyItems
     }
 
     public struct Output: Sendable {
@@ -96,7 +100,7 @@ public struct RuleEngine: Sendable {
                     }
                 }
             }
-            items = items.filter { $0.size > 0 }
+            if !includeEmptyItems { items = items.filter { $0.size > 0 } }
             guard !items.isEmpty else { continue }
             if byCategory[rule.category] == nil {
                 order.append(rule.category)

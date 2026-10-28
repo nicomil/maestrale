@@ -11,8 +11,35 @@ final class ProtectionModel {
     var isScanning = false
     var hasScanned = false
     var message: String?
+
+    /// How much of the list the user wants to see.
+    enum SeverityFilter: String, CaseIterable, Identifiable {
+        case warnings = "Pericoli e avvisi"
+        case dangers = "Solo pericoli"
+        case everything = "Tutto"
+        var id: String { rawValue }
+
+        var minimum: Finding.Severity {
+            switch self {
+            case .warnings: .warning
+            case .dangers: .danger
+            case .everything: .info
+            }
+        }
+    }
+
+    /// Which findings the screen shows: one category or all of them.
+    enum CategoryChoice: Hashable {
+        case all
+        case one(FindingCategory)
+    }
+
+    var severityFilter: SeverityFilter = .warnings
+    var onlyNew = false
+    var search = ""
+    var category: CategoryChoice = .all
     /// Informational findings are hidden unless asked for.
-    var showInfo = false
+    var showInfo: Bool { severityFilter == .everything }
     /// Findings the user marked as trusted, remembered between launches.
     var ignored: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "ignoredFindings") ?? [])
     /// Developers (Team IDs) the user trusts: their warnings are not shown.
@@ -30,6 +57,46 @@ final class ProtectionModel {
             let items = visibleFindings.filter { $0.category == category }
             return items.isEmpty ? nil : (category, items)
         }
+    }
+
+    /// The visible findings that pass the severity, "new" and text filters,
+    /// in every category: the category column counts these.
+    var filteredFindings: [Finding] {
+        Self.filter(visibleFindings, minimum: severityFilter.minimum, onlyNew: onlyNew, search: search)
+    }
+
+    /// What the results list shows: the filtered findings of the chosen category.
+    var shownFindings: [Finding] {
+        guard case .one(let chosen) = category else { return filteredFindings }
+        return filteredFindings.filter { $0.category == chosen }
+    }
+
+    /// The categories with something to show, with their count and worst severity.
+    var categoryRows: [(category: FindingCategory, count: Int, worst: Finding.Severity)] {
+        FindingCategory.allCases.compactMap { category in
+            let items = filteredFindings.filter { $0.category == category }
+            guard let worst = items.map(\.severity).max() else { return nil }
+            return (category, items.count, worst)
+        }
+    }
+
+    /// Applies the filters and sorts: dangers first, then what is new, then by title.
+    nonisolated static func filter(_ findings: [Finding], minimum: Finding.Severity, onlyNew: Bool,
+                                   search: String) -> [Finding] {
+        let text = search.trimmingCharacters(in: .whitespaces)
+        return findings
+            .filter { finding in
+                guard finding.severity >= minimum, !onlyNew || finding.isNew else { return false }
+                guard !text.isEmpty else { return true }
+                return finding.title.localizedCaseInsensitiveContains(text)
+                    || finding.reasons.contains { $0.localizedCaseInsensitiveContains(text) }
+                    || finding.path?.path.localizedCaseInsensitiveContains(text) == true
+            }
+            .sorted { a, b in
+                if a.severity != b.severity { return a.severity > b.severity }
+                if a.isNew != b.isNew { return a.isNew }
+                return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
+            }
     }
 
     /// The root-only facts of the last deep scan, reused by the next scans.
@@ -256,57 +323,29 @@ struct ProtectionView: View {
     var body: some View {
         @Bindable var protection = protection
         VStack(spacing: 0) {
-            HStack {
-                if protection.hasScanned {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(protection.visibleFindings.isEmpty ? "Nessuna minaccia evidente"
-                             : "\(protection.visibleFindings.count) elementi da controllare").font(.title2.bold())
-                        if !protection.newFindings.isEmpty {
-                            Text("\(protection.newFindings.count) nuovi dall'ultimo controllo").foregroundStyle(.orange)
-                        }
-                    }
-                }
-                Spacer()
-                if protection.isScanning { ProgressView().controlSize(.small) }
-                Button(protection.hasScanned ? "Controlla di nuovo" : "Controlla") { Task { await protection.scan() } }
-                    .disabled(protection.isScanning)
-                Button("Controllo approfondito…") { Task { await protection.deepScan() } }
-                    .disabled(protection.isScanning)
-                    .help("Chiede la password e legge anche i permessi di sistema, i cron di root, i profili del dispositivo e le connessioni di tutti gli utenti. Solo lettura.")
-                Menu {
-                    Button("Esporta rapporto…") { protection.exportReport() }.disabled(!protection.hasScanned)
-                    Button("Quarantena (\(protection.quarantineRecords.count))…") { showQuarantine = true }
-                } label: { Image(systemName: "ellipsis.circle") }
-                .menuStyle(.borderlessButton).fixedSize()
-            }
-            .padding()
+            header
             Divider()
             if let status = protection.status {
-                statusCards(status).padding()
+                statusCards(status).padding([.horizontal, .top])
             }
             if !protection.hasScanned {
                 ContentUnavailableView("Protezione", systemImage: "shield.lefthalf.filled",
                                        description: Text("Avvio automatico, login item, firme, estensioni e impostazioni dei browser, cron e shell, profili, certificati, rete, permessi di privacy e difese di macOS."))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if protection.visibleFindings.isEmpty {
-                ContentUnavailableView("Tutto a posto", systemImage: "checkmark.shield",
-                                       description: Text(protection.showInfo ? "Nessun elemento sospetto." : "Nessun avviso. Le informazioni sono nascoste: attivale in basso per vedere tutto."))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                List {
-                    ForEach(protection.groups, id: \.category) { group in
-                        Section(group.category.title) {
-                            ForEach(group.findings) { finding in
-                                FindingRow(finding: finding, onRemove: { pendingRemoval = $0 }, onQuarantine: { pendingQuarantine = $0 })
-                            }
-                        }
-                    }
+                filterBar.padding()
+                Divider()
+                // Fixed category column, results take the rest: no minimum
+                // widths that could push the content beyond the window.
+                HStack(spacing: 0) {
+                    categoryColumn.frame(width: 220)
+                    Divider()
+                    results.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
             if protection.hasScanned {
                 Divider()
                 HStack {
-                    Toggle("Mostra anche le informazioni", isOn: $protection.showInfo).toggleStyle(.checkbox)
                     if let message = protection.message { Text(message).foregroundStyle(.secondary) }
                     Spacer()
                     if !protection.ignored.isEmpty {
@@ -341,6 +380,138 @@ struct ProtectionView: View {
         .sheet(isPresented: $showQuarantine) { QuarantineView() }
     }
 
+    /// Title with the counts by severity, and the scan buttons.
+    private var header: some View {
+        let visible = protection.visibleFindings
+        let dangers = visible.filter { $0.severity == .danger }.count
+        let warnings = visible.filter { $0.severity == .warning }.count
+        let infos = protection.findings.filter { !protection.ignored.contains($0.id) && $0.severity == .info }.count
+        return HStack {
+            if protection.hasScanned {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(dangers + warnings == 0 ? "Nessuna minaccia evidente"
+                         : "\(dangers + warnings) elementi da controllare").font(.title2.bold())
+                    HStack(spacing: 10) {
+                        severityCount(dangers, "pericoli", .red)
+                        severityCount(warnings, "avvisi", .orange)
+                        severityCount(infos, "informazioni", .blue)
+                        if !protection.newFindings.isEmpty {
+                            Text("\(protection.newFindings.count) nuovi dall'ultimo controllo").foregroundStyle(.orange)
+                        }
+                    }
+                    .font(.callout)
+                }
+            }
+            Spacer()
+            if protection.isScanning { ProgressView().controlSize(.small) }
+            Button(protection.hasScanned ? "Controlla di nuovo" : "Controlla") { Task { await protection.scan() } }
+                .disabled(protection.isScanning)
+            Button("Controllo approfondito…") { Task { await protection.deepScan() } }
+                .disabled(protection.isScanning)
+                .help("Chiede la password e legge anche i permessi di sistema, i cron di root, i profili del dispositivo e le connessioni di tutti gli utenti. Solo lettura.")
+            Menu {
+                Button("Esporta rapporto…") { protection.exportReport() }.disabled(!protection.hasScanned)
+                Button("Quarantena (\(protection.quarantineRecords.count))…") { showQuarantine = true }
+            } label: { Image(systemName: "ellipsis.circle") }
+            .menuStyle(.borderlessButton).fixedSize()
+        }
+        .padding()
+    }
+
+    private func severityCount(_ count: Int, _ label: String, _ color: Color) -> some View {
+        HStack(spacing: 4) {
+            Circle().fill(count > 0 ? color : Color.secondary.opacity(0.4)).frame(width: 8, height: 8)
+            Text("\(count) \(label)").foregroundStyle(count > 0 ? .primary : .secondary)
+        }
+    }
+
+    /// Severity, "only new" and text: what narrows the list.
+    private var filterBar: some View {
+        @Bindable var protection = protection
+        return HStack(spacing: 12) {
+            Picker("Gravità", selection: $protection.severityFilter) {
+                ForEach(ProtectionModel.SeverityFilter.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented).labelsHidden().fixedSize()
+            Toggle("Solo nuovi", isOn: $protection.onlyNew).toggleStyle(.checkbox)
+                .disabled(protection.newFindings.isEmpty && !protection.onlyNew)
+            Spacer()
+            TextField("Cerca titolo, motivo o percorso", text: $protection.search)
+                .textFieldStyle(.roundedBorder).frame(width: 240)
+        }
+    }
+
+    /// One row per category with something to show, "Tutte" first.
+    private var categoryColumn: some View {
+        @Bindable var protection = protection
+        let rows = protection.categoryRows
+        let total = protection.filteredFindings.count
+        return List(selection: $protection.category) {
+            categoryRow("Tutte le categorie", icon: "shield.lefthalf.filled", count: total,
+                        worst: rows.map(\.worst).max())
+                .tag(ProtectionModel.CategoryChoice.all)
+            ForEach(rows, id: \.category) { row in
+                categoryRow(row.category.title, icon: Self.icon(for: row.category), count: row.count, worst: row.worst)
+                    .tag(ProtectionModel.CategoryChoice.one(row.category))
+            }
+        }
+        .listStyle(.sidebar)
+        .onChange(of: rows.map(\.category)) { _, categories in
+            // The chosen category emptied out (filters changed): go back to "all".
+            if case .one(let chosen) = protection.category, !categories.contains(chosen) { protection.category = .all }
+        }
+    }
+
+    private func categoryRow(_ title: String, icon: String, count: Int, worst: Finding.Severity?) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon).foregroundStyle(.secondary).frame(width: 18)
+            Text(title).lineLimit(1)
+            Spacer()
+            Text("\(count)").monospacedDigit().font(.callout).foregroundStyle(.secondary)
+            Circle().fill(Self.color(for: worst)).frame(width: 8, height: 8)
+        }
+    }
+
+    @ViewBuilder private var results: some View {
+        let shown = protection.shownFindings
+        if shown.isEmpty {
+            let nothingAtAll = protection.filteredFindings.isEmpty
+            ContentUnavailableView(nothingAtAll && protection.search.isEmpty && !protection.onlyNew ? "Tutto a posto" : "Nessun risultato",
+                                   systemImage: nothingAtAll && protection.search.isEmpty && !protection.onlyNew ? "checkmark.shield" : "line.3.horizontal.decrease.circle",
+                                   description: Text(nothingAtAll && protection.search.isEmpty && !protection.onlyNew
+                                                     ? (protection.showInfo ? "Nessun elemento sospetto." : "Nessun avviso. Scegli \"Tutto\" per vedere anche le informazioni.")
+                                                     : "Nessun elemento corrisponde ai filtri scelti."))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            List(shown) { finding in
+                FindingRow(finding: finding, showsCategory: protection.category == .all,
+                           onRemove: { pendingRemoval = $0 }, onQuarantine: { pendingQuarantine = $0 })
+            }
+        }
+    }
+
+    static func icon(for category: FindingCategory) -> String {
+        switch category {
+        case .persistence: "power"
+        case .application: "app.badge"
+        case .browser: "globe"
+        case .process: "cpu"
+        case .network: "network"
+        case .configuration: "gearshape"
+        case .defense: "lock.shield"
+        case .signature: "doc.text.magnifyingglass"
+        }
+    }
+
+    static func color(for severity: Finding.Severity?) -> Color {
+        switch severity {
+        case .danger?: .red
+        case .warning?: .orange
+        case .info?: .blue
+        case nil: Color.secondary.opacity(0.4)
+        }
+    }
+
     private func statusCards(_ status: ProtectionStatus) -> some View {
         HStack(spacing: 12) {
             card("Gatekeeper", status.gatekeeperEnabled, "Blocca le app non verificate")
@@ -370,51 +541,86 @@ struct ProtectionView: View {
     }
 }
 
-/// One finding: severity, reasons, path, evidence on request, and the actions.
+/// One finding, compact: severity, title, first reason and path. A click
+/// opens the other reasons and the evidence. The main action stays on the
+/// row; the rest is in a menu.
 struct FindingRow: View {
     @Environment(AppModel.self) private var model
     let finding: Finding
+    /// Show the category next to the title (when the list mixes categories).
+    var showsCategory = false
     let onRemove: (Finding) -> Void
     let onQuarantine: (Finding) -> Void
-    @State private var showEvidence = false
+    @State private var expanded = false
 
     private var protection: ProtectionModel { model.protection }
+
+    private var hasMore: Bool { finding.reasons.count > 1 || !finding.evidence.isEmpty || finding.team != nil }
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: finding.severity == .danger ? "exclamationmark.octagon.fill"
                   : finding.severity == .warning ? "exclamationmark.triangle.fill" : "info.circle.fill")
-                .foregroundStyle(finding.severity == .danger ? .red : finding.severity == .warning ? .orange : .blue)
+                .foregroundStyle(ProtectionView.color(for: finding.severity))
                 .font(.title3)
+                .frame(width: 22)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    Text(finding.title).bold()
+                    Text(finding.title).bold().lineLimit(1)
                     if finding.isNew {
                         Text("Nuovo").font(.caption2.bold()).padding(.horizontal, 6).padding(.vertical, 1)
                             .background(.orange.opacity(0.2), in: Capsule()).foregroundStyle(.orange)
                     }
+                    if showsCategory {
+                        Text(finding.category.title).font(.caption2).padding(.horizontal, 6).padding(.vertical, 1)
+                            .background(.secondary.opacity(0.15), in: Capsule()).foregroundStyle(.secondary)
+                    }
                 }
-                Text(finding.reasons.joined(separator: " · ")).font(.callout)
+                if expanded {
+                    ForEach(finding.reasons, id: \.self) { reason in
+                        Text("· " + reason).font(.callout).fixedSize(horizontal: false, vertical: true)
+                    }
+                } else if let first = finding.reasons.first {
+                    Text(finding.reasons.count > 1 ? "\(first) · +\(finding.reasons.count - 1)" : first)
+                        .font(.callout).lineLimit(1)
+                }
                 if let path = finding.path {
-                    Text(path.path).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    Text(path.path).font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(expanded ? nil : 1).truncationMode(.middle).textSelection(.enabled)
                 }
-                if !finding.evidence.isEmpty {
-                    DisclosureGroup("Dettagli", isExpanded: $showEvidence) {
+                if expanded {
+                    if let team = finding.team {
+                        Text("Team ID \(team)").font(.caption).foregroundStyle(.secondary)
+                    }
+                    if !finding.evidence.isEmpty {
                         VStack(alignment: .leading, spacing: 2) {
                             ForEach(finding.evidence, id: \.self) { line in
                                 Text(line).font(.caption.monospaced()).textSelection(.enabled)
                             }
                         }
-                        .padding(.top, 2)
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 6))
                     }
-                    .font(.caption).foregroundStyle(.secondary)
                 }
             }
-            Spacer()
-            if let path = finding.path {
-                Button { NSWorkspace.shared.activateFileViewerSelecting([path]) } label: { Image(systemName: "magnifyingglass") }
-                    .buttonStyle(.borderless).help("Mostra nel Finder")
-            }
+            Spacer(minLength: 8)
+            actions
+            // Always present, so the buttons line up from row to row.
+            Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                .font(.caption).foregroundStyle(.tertiary).frame(width: 14)
+                .padding(.top, 4)
+                .opacity(hasMore ? 1 : 0)
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .onTapGesture { if hasMore { withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() } } }
+        .help(hasMore && !expanded ? "Clic per vedere tutti i motivi e i dettagli" : "")
+    }
+
+    /// The main action on the row, the rest in the menu.
+    private var actions: some View {
+        HStack(spacing: 6) {
             if case .openSettings(let link) = finding.action, !link.isEmpty {
                 Button("Apri Impostazioni") { if let url = URL(string: link) { NSWorkspace.shared.open(url) } }
             }
@@ -424,23 +630,38 @@ struct FindingRow: View {
             if case .terminateProcess(let pid) = finding.action {
                 Button("Termina") { Task { await protection.terminate(pid: pid) } }
             }
+            if canQuarantine {
+                Button("Quarantena") { onQuarantine(finding) }
+                    .tint(finding.severity == .danger ? .red : nil)
+            } else if canRemove {
+                Button("Rimuovi") { onRemove(finding) }
+            }
             Menu {
+                if canQuarantine && canRemove {
+                    Button("Rimuovi (senza quarantena)") { onRemove(finding) }
+                }
+                if let path = finding.path {
+                    Button("Mostra nel Finder") { NSWorkspace.shared.activateFileViewerSelecting([path]) }
+                    Button("Copia percorso") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(path.path, forType: .string)
+                    }
+                }
+                Divider()
                 Button("Ignora questo elemento") { protection.ignore(finding) }
                 if let team = finding.team {
                     Button("Fidati dello sviluppatore \(team)") { protection.trust(team: team) }
                 }
-            } label: { Text("Ignora") }
+            } label: { Image(systemName: "ellipsis.circle") }
             .menuStyle(.borderlessButton).fixedSize()
-            if finding.action == .removeLaunchItem || finding.action == .trash || finding.action == .quarantine,
-               finding.path != nil || finding.launchItem != nil {
-                Button("Rimuovi") { onRemove(finding) }
-            }
-            if canQuarantine {
-                Button("Quarantena") { onQuarantine(finding) }
-                    .tint(finding.severity == .danger ? .red : nil)
-            }
+            .help("Altre azioni")
         }
-        .padding(.vertical, 4)
+        .controlSize(.small)
+    }
+
+    private var canRemove: Bool {
+        (finding.action == .removeLaunchItem || finding.action == .trash || finding.action == .quarantine)
+            && (finding.path != nil || finding.launchItem != nil)
     }
 
     /// Files the app can put aside: not Apple's, not the system's, not a

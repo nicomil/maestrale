@@ -8,10 +8,11 @@ struct UpdatesView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                if updates.lastCheck != nil {
+                if let lastCheck = updates.lastCheck {
                     Text(updates.updates.isEmpty ? "Tutto aggiornato"
                          : "\(updates.updates.count) aggiornamenti disponibili").font(.title2.bold())
-                    Text("su \(updates.checkedApps) app").foregroundStyle(.secondary)
+                    Text("su \(updates.checkedApps) app · controllo delle \(lastCheck.formatted(date: .omitted, time: .shortened))")
+                        .foregroundStyle(.secondary)
                 }
                 Spacer()
                 if updates.isChecking { ProgressView().controlSize(.small) }
@@ -36,6 +37,11 @@ struct UpdatesView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .navigationTitle("Aggiornamenti")
+        // An app updated through its own updater or the App Store must leave the list by itself.
+        .task { await updates.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await updates.refresh() }
+        }
     }
 
     private func row(_ update: AppUpdate) -> some View {

@@ -126,4 +126,51 @@ struct Sandbox {
         #expect(text.contains("dryRun\tok"))
         #expect(text.contains(target.lastPathComponent))
     }
+
+    func lock(_ url: URL) throws {
+        try FileManager.default.setAttributes([.immutable: true], ofItemAtPath: url.path)
+    }
+
+    /// A locked file in the Trash is what keeps it from emptying: with
+    /// `unlocksItems` the flag is cleared and the file goes.
+    @Test func deleteUnlocksLockedFilesWhenAsked() throws {
+        let box = try Sandbox(); defer { box.remove() }
+        let folder = box.allowed.appendingPathComponent("locked folder")
+        let inner = try box.file("locked folder/inner.txt", in: box.allowed)
+        try lock(inner)
+        try lock(folder)
+        let single = try box.file("single.txt", in: box.allowed)
+        try lock(single)
+        defer { try? FileManager.default.setAttributes([.immutable: false], ofItemAtPath: single.path) }
+
+        let remover = SafeRemover(allowedRoots: [box.allowed], mode: .delete, log: nil, unlocksItems: true)
+        let outcomes = remover.remove([folder, single])
+        #expect(outcomes.allSatisfy { (try? $0.result.get()) != nil })
+        #expect(!FileManager.default.fileExists(atPath: folder.path))
+        #expect(!FileManager.default.fileExists(atPath: single.path))
+    }
+
+    /// Everywhere else a locked file stays locked and is reported as not removed.
+    @Test func deleteLeavesLockedFilesAloneByDefault() throws {
+        let box = try Sandbox(); defer { box.remove() }
+        let single = try box.file("single.txt", in: box.allowed)
+        try lock(single)
+        defer { try? FileManager.default.setAttributes([.immutable: false], ofItemAtPath: single.path) }
+        let outcome = try #require(remover(box, .delete).remove([single]).first)
+        #expect((try? outcome.result.get()) == nil)
+        #expect(FileManager.default.fileExists(atPath: single.path))
+    }
+
+    /// Unlocking never reaches outside the allowed folders: the check comes first.
+    @Test func unlockingDoesNotTouchItemsOutsideAllowedRoots() throws {
+        let box = try Sandbox(); defer { box.remove() }
+        let outside = try box.file("outside.txt", in: box.outside)
+        try lock(outside)
+        defer { try? FileManager.default.setAttributes([.immutable: false], ofItemAtPath: outside.path) }
+        let remover = SafeRemover(allowedRoots: [box.allowed], mode: .delete, log: nil, unlocksItems: true)
+        let outcome = try #require(remover.remove([outside]).first)
+        #expect(outcome.result == .failure(.outsideAllowedRoots))
+        var info = stat()
+        #expect(lstat(outside.path, &info) == 0 && info.st_flags & UInt32(UF_IMMUTABLE) != 0)
+    }
 }

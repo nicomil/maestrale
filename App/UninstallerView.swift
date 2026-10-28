@@ -13,6 +13,8 @@ struct UninstallerView: View {
 
     var body: some View {
         @Bindable var uninstaller = uninstaller
+        // Resizable split with bounds that never add up to more than the
+        // window's minimum width (sidebar 250 + list 400 + detail 350).
         HSplitView {
             VStack(spacing: 0) {
                 HStack {
@@ -38,9 +40,8 @@ struct UninstallerView: View {
                     .disabled(uninstaller.isWorking)
                 }
             }
-            .frame(minWidth: 280, idealWidth: 320)
-
-            detail.frame(minWidth: 360)
+            .frame(minWidth: 300, idealWidth: 350, maxWidth: 400)
+            detail.frame(minWidth: 350, maxWidth: .infinity, maxHeight: .infinity)
         }
         .navigationTitle("Disinstallazione")
         .task { if uninstaller.apps.isEmpty { await uninstaller.load() } }
@@ -55,11 +56,24 @@ struct UninstallerView: View {
                     VStack(alignment: .leading) {
                         Text(app.name).font(.title2.bold())
                         Text("\(app.bundleID) · versione \(app.version)").foregroundStyle(.secondary).font(.callout)
+                            .lineLimit(1).truncationMode(.middle)
                     }
                     Spacer()
                 }
                 .padding()
                 Divider()
+                HStack {
+                    Text("\(uninstaller.files.count) elementi").foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Tutti") { uninstaller.selectAllFiles() }
+                        .disabled(uninstaller.fileSelection.count == uninstaller.files.count)
+                        .help("Seleziona tutti i file")
+                    Button("Nessuno") { uninstaller.deselectAllFiles() }
+                        .disabled(uninstaller.fileSelection.isEmpty)
+                        .help("Deseleziona tutti i file")
+                }
+                .controlSize(.small)
+                .padding(.horizontal).padding(.vertical, 6)
                 List(uninstaller.files) { file in
                     FileRow(file: file, selection: Binding(
                         get: { uninstaller.fileSelection.contains(file.url) },
@@ -81,18 +95,38 @@ struct UninstallerView: View {
     private func footer(_ app: InstalledApp) -> some View {
         @Bindable var model = model
         let size = uninstaller.selectedFiles.reduce(Int64(0)) { $0 + $1.size }
-        return HStack {
-            RemovalModePicker(mode: $model.removalMode)
-            if let message = uninstaller.message { Text(message).foregroundStyle(.secondary) }
-            Spacer()
-            Button("Reset") { confirm = .reset }
-                .help("Cancella dati e preferenze, l'app resta installata")
-                .disabled(uninstaller.isWorking || uninstaller.selectedFiles.allSatisfy { $0.url == app.url })
-            Button("Disinstalla \(formatBytes(size))") { confirm = .uninstall }
-                .buttonStyle(.borderedProminent)
-                .disabled(uninstaller.isWorking || uninstaller.selectedFiles.isEmpty)
+        let needsPassword = uninstaller.selectedFiles.contains(where: \.needsHelper)
+        let count = uninstaller.selectedFiles.count
+        // Status line on top, controls below: the pane can be narrow, so the
+        // mode is a compact menu and the size lives in the status line.
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 4) {
+                if let message = uninstaller.message {
+                    Text(message)
+                } else {
+                    Text(count == 0 ? "Niente selezionato" : "\(count) elementi · \(formatBytes(size))")
+                    if needsPassword {
+                        Text("·")
+                        Image(systemName: "lock.fill")
+                        Text("serve la password")
+                    }
+                }
+            }
+            .font(.callout).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
+            HStack(spacing: 8) {
+                RemovalModePicker(mode: $model.removalMode, compact: true)
+                Spacer(minLength: 12)
+                Button("Reset") { confirm = .reset }
+                    .help("Cancella dati e preferenze, l'app resta installata")
+                    .disabled(uninstaller.isWorking || uninstaller.selectedFiles.allSatisfy { $0.url == app.url })
+                    .fixedSize()
+                Button("Disinstalla") { confirm = .uninstall }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(uninstaller.isWorking || uninstaller.selectedFiles.isEmpty)
+                    .fixedSize()
+            }
         }
-        .padding()
+        .padding(.horizontal).padding(.vertical, 10)
         .confirmationDialog(confirm == .reset ? "Resettare \(app.name)?" : "Disinstallare \(app.name)?",
                             isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } }),
                             presenting: confirm) { action in
@@ -101,7 +135,8 @@ struct UninstallerView: View {
                 Task { await uninstaller.run(reset: action == .reset, mode: model.removalMode) }
             }
         } message: { _ in
-            Text("L'app verrà chiusa se è aperta. " + model.removalMode.confirmation)
+            Text("L'app verrà chiusa se è aperta. " + model.removalMode.confirmation
+                 + (needsPassword ? " macOS chiederà la password di amministratore per gli elementi di sistema." : ""))
         }
     }
 }

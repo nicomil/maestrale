@@ -68,10 +68,33 @@ final class UninstallerModel {
         let bundle = ScanItem(url: app.url, size: app.size, risk: .medium, autoSelect: true,
                               needsHelper: !app.isWritable, detail: "Applicazione")
         files = [bundle] + leftovers.sorted { $0.size > $1.size }
-        fileSelection = Set(files.filter { $0.autoSelect && !$0.needsHelper }.map(\.url))
+        // The bundle is what an uninstall is about: it stays selected even when
+        // removing it takes the password. Other items needing it wait for the user.
+        fileSelection = Set(files.filter { $0.autoSelect && (!$0.needsHelper || $0.url == app.url) }.map(\.url))
     }
 
     var selectedFiles: [ScanItem] { files.filter { fileSelection.contains($0.url) } }
+
+    func selectAllFiles() { fileSelection = Set(files.map(\.url)) }
+
+    func deselectAllFiles() { fileSelection = [] }
+
+    /// Removes system items with the password; replaced in tests.
+    var removeAsAdmin: @MainActor ([ScanItem], RemovalMode) async -> (outcomes: [RemovalOutcome], note: String) = {
+        await AppModel.removeAsAdmin($0, mode: $1)
+    }
+
+    /// Items the user could not remove for lack of permission, but that live
+    /// where the helper may act: a bundle owned by root, for instance, when
+    /// the ownership check did not foresee it.
+    nonisolated static func retryableAsAdmin(_ outcomes: [RemovalOutcome], items: [ScanItem]) -> [ScanItem] {
+        let roots = AdminRunner.systemRoots.map(\.path)
+        return outcomes.compactMap { outcome in
+            guard case .failure(.failed) = outcome.result,
+                  roots.contains(where: { outcome.url.path.hasPrefix($0 + "/") }) else { return nil }
+            return items.first { $0.url == outcome.url }
+        }
+    }
 
     /// Removes the selected files. With `reset`, the app itself is kept and
     /// only its data is removed, so it starts as freshly installed.
@@ -93,9 +116,13 @@ final class UninstallerModel {
         let remover = SafeRemover(allowedRoots: AllowedRoots.appSupport(), mode: mode)
         var outcomes = await Task.detached { remover.remove(urls) }.value
         var note = ""
-        let adminItems = chosen.filter(\.needsHelper)
+        // What failed for permissions under a system folder gets one more try with the password.
+        let retry = mode == .dryRun ? [] : Self.retryableAsAdmin(outcomes, items: chosen)
+        let adminItems = chosen.filter(\.needsHelper) + retry
         if !adminItems.isEmpty {
-            let result = await AppModel.removeAsAdmin(adminItems, mode: mode)
+            let result = await removeAsAdmin(adminItems, mode)
+            let retried = Set(result.outcomes.map(\.url))
+            outcomes.removeAll { retried.contains($0.url) }
             outcomes += result.outcomes
             note = result.note
         }
@@ -152,6 +179,22 @@ final class UpdatesModel {
         isChecking = false
     }
 
+    /// Drops the updates the user installed meanwhile: each app is read again
+    /// from disk and kept only while its version is still the old one.
+    func refresh() async {
+        guard !updates.isEmpty, !isChecking else { return }
+        let pending = updates
+        let still = await Task.detached(priority: .utility) {
+            pending.filter { update in
+                guard let installed = AppInventory.read(update.app.url, computeSize: false) else { return false }
+                return update.isStillPending(for: installed)
+            }
+        }.value
+        let stillIDs = Set(still.map(\.id))
+        for update in updates where !stillIDs.contains(update.id) { messages[update.id] = nil }
+        updates = still
+    }
+
     /// Sparkle apps update themselves: open them. App Store: open the page.
     /// Homebrew: run `brew upgrade --cask`.
     func update(_ update: AppUpdate) async {
@@ -169,6 +212,7 @@ final class UpdatesModel {
             messages[update.id] = ok ? "Aggiornata" : "brew upgrade non riuscito (vedi Terminale)"
             if ok { updates.removeAll { $0.id == update.id } }
         }
+        await refresh()
     }
 
     nonisolated static func brewUpgrade(_ token: String) -> Bool {

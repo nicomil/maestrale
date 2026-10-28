@@ -20,7 +20,14 @@ public struct InstalledApp: Identifiable, Hashable, Sendable {
     public let embeddedBundleIDs: [String]
 
     public var isApple: Bool { bundleID.hasPrefix("com.apple.") }
-    public var isWritable: Bool { FileManager.default.isDeletableFile(atPath: url.path) }
+    /// True when the user can move the bundle away without the password.
+    /// Moving a folder to another parent needs write access to the folder
+    /// itself, not only to its parent: an app installed by root in
+    /// /Applications (root:wheel 755) fails even though /Applications is
+    /// writable by administrators.
+    public var isWritable: Bool {
+        FileManager.default.isDeletableFile(atPath: url.path) && FileManager.default.isWritableFile(atPath: url.path)
+    }
 }
 
 /// Finds the applications installed in /Applications and ~/Applications.

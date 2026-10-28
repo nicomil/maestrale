@@ -80,7 +80,20 @@ struct SpaceLensView: View {
 
     private func childrenList(_ node: DiskNode) -> some View {
         @Bindable var lens = lens
-        return List(node.children, selection: $lens.selection) { child in
+        let selectable = lens.selectableNodes
+        return VStack(spacing: 0) {
+            HStack {
+                Text("\(node.children.count) elementi").foregroundStyle(.secondary)
+                Spacer()
+                Button("Seleziona tutto") { lens.selectAll() }
+                    .disabled(selectable.isEmpty || selectable.allSatisfy { lens.selection.contains($0.url) })
+                Button("Deseleziona tutto") { lens.deselectAll() }
+                    .disabled(lens.selectedNodes().isEmpty)
+            }
+            .controlSize(.small)
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            Divider()
+            List(node.children, selection: $lens.selection) { child in
             HStack {
                 Image(systemName: child.isAggregate ? "doc.on.doc" : child.isDirectory ? "folder.fill" : "doc")
                     .foregroundStyle(child.isDirectory ? Color.accentColor : .secondary)
@@ -103,6 +116,7 @@ struct SpaceLensView: View {
                 }
             }
             .selectionDisabled(child.isAggregate)
+            }
         }
     }
 

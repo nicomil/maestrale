@@ -37,12 +37,19 @@ public struct RemovalOutcome: Sendable {
 public struct SafeRemover: Sendable {
     public let allowedRoots: [URL]
     public let mode: RemovalMode
+    /// With `.delete`, clear the user "locked" flag (`uchg`) of an item that
+    /// refuses to go, then try once more. Only the Trash asks for this: a
+    /// locked file in the Trash is what keeps it from emptying. The check of
+    /// `validate` comes first, so nothing outside the allowed folders is
+    /// unlocked.
+    public let unlocksItems: Bool
     private let log: OperationLog?
 
-    public init(allowedRoots: [URL], mode: RemovalMode, log: OperationLog? = .standard) {
+    public init(allowedRoots: [URL], mode: RemovalMode, log: OperationLog? = .standard, unlocksItems: Bool = false) {
         self.allowedRoots = allowedRoots.map { $0.resolvingSymlinksInPath().standardizedFileURL }
         self.mode = mode
         self.log = log
+        self.unlocksItems = unlocksItems
     }
 
     /// Checks a path without touching it.
@@ -83,12 +90,33 @@ public struct SafeRemover: Sendable {
             switch mode {
             case .dryRun: break
             case .trash: try FileManager.default.trashItem(at: url, resultingItemURL: nil)
-            case .delete: try FileManager.default.removeItem(at: url)
+            case .delete:
+                do {
+                    try FileManager.default.removeItem(at: url)
+                } catch where unlocksItems && Self.unlock(url) {
+                    try FileManager.default.removeItem(at: url)
+                }
             }
             return RemovalOutcome(url: url, result: .success(size))
         } catch {
             return RemovalOutcome(url: url, result: .failure(.failed(error.localizedDescription)))
         }
+    }
+
+    /// Clears the user immutable flag on an item and everything inside it,
+    /// without following symlinks. Returns true when at least one flag changed.
+    static func unlock(_ url: URL) -> Bool {
+        var paths = [url.path]
+        if let walker = FileManager.default.enumerator(at: url, includingPropertiesForKeys: nil) {
+            for case let child as URL in walker { paths.append(child.path) }
+        }
+        var changed = false
+        for path in paths {
+            var info = stat()
+            guard lstat(path, &info) == 0, info.st_flags & UInt32(UF_IMMUTABLE) != 0 else { continue }
+            if lchflags(path, info.st_flags & ~UInt32(UF_IMMUTABLE)) == 0 { changed = true }
+        }
+        return changed
     }
 
     private func isSymlink(_ url: URL) -> Bool {

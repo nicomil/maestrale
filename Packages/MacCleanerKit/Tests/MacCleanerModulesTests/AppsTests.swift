@@ -110,13 +110,94 @@ import Testing
     }
 
     @Test func storeAndBrewParsing() {
-        let lookup = #"{"resultCount":1,"results":[{"bundleId":"com.x.app","version":"3.2","trackViewUrl":"https://apps.apple.com/app/id1"}]}"#
-        #expect(UpdateChecker.parseLookup(Data(lookup.utf8))["com.x.app"]?.version == "3.2")
+        let lookup = #"{"resultCount":1,"results":[{"bundleId":"com.x.app","version":"3.2","trackId":1,"minimumOsVersion":"14.0","trackViewUrl":"https://apps.apple.com/app/id1"}]}"#
+        let entry = UpdateChecker.parseLookup(Data(lookup.utf8))["com.x.app"]
+        #expect(entry?.version == "3.2")
+        // The App Store app opens the page, not the browser.
+        #expect(entry?.page?.absoluteString == "macappstore://apps.apple.com/app/id1")
+        #expect(entry?.minimumOSVersion == "14.0")
 
         let outdated = #"{"formulae":[],"casks":[{"name":"firefox","installed_versions":["120.0"],"current_version":"121.0"}]}"#
         #expect(UpdateChecker.parseBrewOutdated(Data(outdated.utf8)).first?.version == "121.0")
 
         let info = #"{"casks":[{"token":"firefox","artifacts":[{"app":["Firefox.app"]},{"zap":[]}]}]}"#
         #expect(UpdateChecker.parseBrewAppNames(Data(info.utf8))["firefox"] == ["Firefox.app"])
+    }
+
+    func app(version: String, build: String, isAppStore: Bool = false) -> InstalledApp {
+        InstalledApp(url: URL(fileURLWithPath: "/Applications/X.app"), name: "X", bundleID: "com.x.app", version: version,
+                     build: build, teamID: nil, size: 0, lastUsed: nil, isAppStore: isAppStore, sparkleFeed: nil,
+                     embeddedBundleIDs: [])
+    }
+
+    /// After the user updates, the entry is kept only while the app on disk is still older.
+    @Test func updateStaysOnlyWhileInstalledVersionIsOlder() {
+        let sparkle = AppUpdate(app: app(version: "1.0", build: "100"), availableVersion: "1.1", availableBuild: "110",
+                                source: .sparkle, infoURL: nil, caskToken: nil)
+        #expect(sparkle.isStillPending(for: app(version: "1.0", build: "100")))
+        #expect(!sparkle.isStillPending(for: app(version: "1.1", build: "110")))
+        #expect(!sparkle.isStillPending(for: app(version: "1.2", build: "105"))) // newer marketing version wins
+
+        let store = AppUpdate(app: app(version: "3.1", build: "1"), availableVersion: "3.2", source: .appStore,
+                              infoURL: nil, caskToken: nil)
+        #expect(store.isStillPending(for: app(version: "3.1", build: "1")))
+        #expect(!store.isStillPending(for: app(version: "3.2", build: "2")))
+
+        // Homebrew with --greedy lists casks whose app updated itself: not pending any more.
+        let brew = AppUpdate(app: app(version: "120.0", build: "1"), availableVersion: "121.0,abc", source: .homebrew,
+                             infoURL: nil, caskToken: "firefox")
+        #expect(brew.isStillPending(for: app(version: "120.0", build: "1")))
+        #expect(!brew.isStillPending(for: app(version: "121.0", build: "1")))
+        let latest = AppUpdate(app: app(version: "2.0", build: "1"), availableVersion: "latest", source: .homebrew,
+                               infoURL: nil, caskToken: "tool")
+        #expect(latest.isStillPending(for: app(version: "2.0", build: "1"))) // not comparable: trust brew
+    }
+
+    @Test func storeLookupSkipsUnsupportedSystems() {
+        let entry = UpdateChecker.StoreEntry(version: "5.0", page: nil, minimumOSVersion: "15.0")
+        #expect(!entry.isInstallable(on: "14.6.1"))
+        #expect(entry.isInstallable(on: "15.0"))
+        #expect(UpdateChecker.StoreEntry(version: "5.0", page: nil, minimumOSVersion: nil).isInstallable(on: "12.0"))
+    }
+
+    @Test func launchctlLabelsAreParsed() {
+        let output = """
+        PID\tStatus\tLabel
+        512\t0\tcom.google.keystone.agent
+        -\t0\tcom.vendor.Tool.helper
+        -\t-9\tcom.other.agent
+        garbage line
+        """
+        let labels = OrphanLeftoversModule.parseLaunchctlLabels(output)
+        #expect(labels == ["com.google.keystone.agent", "com.vendor.tool.helper", "com.other.agent"])
+    }
+
+    @Test func recentlyModifiedLeftoversAreHighRisk() {
+        let now = Date()
+        let recent = OrphanLeftoversModule.classify(modified: now.addingTimeInterval(-3 * 86_400), now: now)
+        #expect(recent.risk == .high && recent.note.contains("3 giorni fa") && recent.note.contains("ancora in uso"))
+        let old = OrphanLeftoversModule.classify(modified: now.addingTimeInterval(-200 * 86_400), now: now)
+        #expect(old.risk == .medium && old.note.contains("6 mesi fa"))
+        let ancient = OrphanLeftoversModule.classify(modified: now.addingTimeInterval(-800 * 86_400), now: now)
+        #expect(ancient.risk == .medium && ancient.note.contains("2 anni fa"))
+        #expect(OrphanLeftoversModule.classify(modified: nil, now: now).risk == .high)
+    }
+
+    /// A folder named after a launchd service still present or loaded is not an orphan.
+    @Test func launchdLabelsProtectLeftovers() async throws {
+        let home = try FakeHome(); defer { home.remove() }
+        try home.file("Library/Application Support/com.google.keystone/x", bytes: 4096)
+        try home.file("Library/Application Support/com.vendor.tool/x", bytes: 4096)
+        try home.file("Library/Application Support/com.gone.app/x", bytes: 4096)
+        try home.file("Library/Preferences/com.gone.app.plist", bytes: 4096)
+        let commands = FakeCommands(["/bin/launchctl list": "PID\tStatus\tLabel\n-\t0\tcom.vendor.tool\n"])
+        let agent = LaunchItem(plist: home.url.appendingPathComponent("Library/LaunchAgents/com.google.keystone.agent.plist"),
+                               label: "com.google.keystone.agent", program: nil, domain: .userAgent,
+                               isDisabled: false, isBroken: false, ownerApp: nil)
+        let module = OrphanLeftoversModule(home: home.url, commands: commands, launchItems: { [agent] })
+        let report = try await module.scan()
+        #expect(report.categories.map(\.title) == ["com.gone.app"])
+        #expect(report.allItems.count == 2)
+        #expect(report.allItems.allSatisfy { !$0.autoSelect && $0.risk == .high && $0.detail?.contains("oggi") == true })
     }
 }

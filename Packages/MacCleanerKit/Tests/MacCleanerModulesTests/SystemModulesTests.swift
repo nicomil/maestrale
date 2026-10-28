@@ -256,6 +256,20 @@ import Testing
         #expect(items.first { $0.label == "com.ok.agent" }?.isBroken == false)
     }
 
+    @Test func maintenanceSummariesTellWhatChanged() {
+        let listing = """
+        Snapshots for disk /:
+        com.apple.TimeMachine.2026-10-28-101500.local
+        com.apple.TimeMachine.2026-10-28-111500.local
+        """
+        #expect(MaintenanceTask.parseSnapshots(listing).count == 2)
+        #expect(MaintenanceTask.parseSnapshots("Snapshots for disk /:\n").isEmpty)
+        #expect(MaintenanceTask.ramSummary(before: 3_000_000_000, after: 500_000_000).contains("liberati"))
+        #expect(MaintenanceTask.ramSummary(before: 500_000_000, after: 490_000_000).contains("quasi nulla"))
+        #expect(MaintenanceTask.snapshotsSummary(before: 2, after: 0, freed: 1_000_000_000).hasPrefix("Eliminate 2 istantanee su 2"))
+        #expect(MaintenanceTask.snapshotsSummary(before: 2, after: 2, freed: 0).contains("Nessuna istantanea eliminata"))
+    }
+
     @Test func maintenanceTasksHaveAdminOperationsExceptMail() {
         for task in MaintenanceTask.Kind.allCases.map(MaintenanceTask.init(kind:)) {
             #expect((task.adminOperation == nil) == (task.kind == .speedUpMail))

@@ -23,7 +23,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .navigationSplitViewColumnWidth(min: 190, ideal: 210)
+            .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 250)
         } detail: {
             switch destination {
             case .smartCare?:

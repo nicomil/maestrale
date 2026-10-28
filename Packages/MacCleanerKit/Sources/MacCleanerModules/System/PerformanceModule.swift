@@ -258,15 +258,83 @@ public struct MaintenanceTask: Identifiable, Sendable {
         return nil
     }
 
-    /// Runs a task. Admin tasks show the macOS password prompt.
-    public func run(home: URL = FileManager.default.homeDirectoryForCurrentUser) async throws {
-        if let operation = adminOperation {
-            try AdminRunner().run(operation)
-            return
+    /// Runs a task and returns what it achieved, in one line for the card.
+    /// Admin tasks show the macOS password prompt. Measurements are taken
+    /// before and after, so the user sees an effect, not only "done".
+    public func run(home: URL = FileManager.default.homeDirectoryForCurrentUser,
+                    commands: any CommandRunner = SystemCommands()) async throws -> String {
+        switch kind {
+        case .freeRAM:
+            let before = SystemMonitor.cachedFiles()
+            try AdminRunner().run(.freeRAM)
+            // The kernel takes a moment to account for the freed pages.
+            try? await Task.sleep(for: .seconds(1))
+            return Self.ramSummary(before: before, after: SystemMonitor.cachedFiles())
+        case .flushDNS:
+            try AdminRunner().run(.flushDNS)
+            return "Cache DNS svuotata e mDNSResponder riavviato"
+        case .reindexSpotlight:
+            try AdminRunner().run(.reindexSpotlight)
+            return "Indice cancellato: Spotlight lo ricostruisce in background. Le ricerche saranno incomplete per un po'."
+        case .freePurgeable:
+            let snapshots = Self.localSnapshots(commands: commands)
+            guard !snapshots.isEmpty else {
+                throw MaintenanceError.nothingToDo("Nessuna istantanea locale di Time Machine: niente da eliminare")
+            }
+            let before = SystemMonitor.disk().free
+            try AdminRunner().run(.thinLocalSnapshots)
+            let remaining = Self.localSnapshots(commands: commands)
+            return Self.snapshotsSummary(before: snapshots.count, after: remaining.count,
+                                         freed: SystemMonitor.disk().free - before)
+        case .repairPermissions:
+            try AdminRunner().run(.repairPermissions)
+            return "Permessi della cartella Inizio riportati a quelli standard"
+        case .periodicScripts:
+            try AdminRunner().run(.runPeriodicScripts)
+            return "Script giornalieri, settimanali e mensili eseguiti"
+        case .speedUpMail:
+            // Compact the envelope database while Mail is closed.
+            if await PrivacyScanner.isRunning("com.apple.mail") { throw PrivacyError.browserRunning("Mail") }
+            guard let index = Self.mailEnvelopeIndex(home: home) else { throw PrivacyError.failed("database di Mail non trovato") }
+            let before = FileSizer.allocatedSize(of: index)
+            guard let db = SQLiteDB(url: index, readOnly: false), db.execute("VACUUM") else {
+                throw PrivacyError.failed("il database di Mail non si lascia compattare")
+            }
+            let after = FileSizer.allocatedSize(of: index)
+            return "Database di Mail: \(Self.bytes(before)) → \(Self.bytes(after))"
         }
-        // Speed up Mail: compact the envelope database while Mail is closed.
-        if await PrivacyScanner.isRunning("com.apple.mail") { throw PrivacyError.browserRunning("Mail") }
-        guard let index = Self.mailEnvelopeIndex(home: home), let db = SQLiteDB(url: index, readOnly: false),
-              db.execute("VACUUM") else { throw PrivacyError.failed("Envelope Index") }
     }
+
+    /// Names of the local Time Machine snapshots of the startup disk.
+    static func localSnapshots(commands: any CommandRunner) -> [String] {
+        parseSnapshots(commands.run("/usr/bin/tmutil", ["listlocalsnapshots", "/"]))
+    }
+
+    /// "com.apple.TimeMachine.2026-10-28-101500.local" lines, header skipped.
+    static func parseSnapshots(_ output: String) -> [String] {
+        output.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { $0.hasPrefix("com.apple.TimeMachine.") }
+    }
+
+    static func ramSummary(before: UInt64, after: UInt64) -> String {
+        let freed = before > after ? before - after : 0
+        let effect = freed < 50_000_000 ? "quasi nulla da liberare" : "liberati \(bytes(Int64(freed)))"
+        return "File in cache: \(bytes(Int64(before))) → \(bytes(Int64(after))) · \(effect)"
+    }
+
+    static func snapshotsSummary(before: Int, after: Int, freed: Int64) -> String {
+        let removed = max(0, before - after)
+        let what = removed == 0 ? "Nessuna istantanea eliminata (macOS le ha ritenute necessarie)"
+            : "Eliminate \(removed) istantanee su \(before)"
+        return freed > 0 ? "\(what) · liberati \(bytes(freed))" : what
+    }
+
+    static func bytes(_ value: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: max(0, value), countStyle: .file)
+    }
+}
+
+/// A task that had nothing to do: not a failure, but not "done" either.
+public enum MaintenanceError: Error, Equatable, Sendable {
+    case nothingToDo(String)
 }

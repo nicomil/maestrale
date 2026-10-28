@@ -66,6 +66,39 @@ struct TempFolder {
         #expect(model.fileSelection.allSatisfy { $0.lastPathComponent != "leftover-of-com.test.slow" })
     }
 
+    /// Uninstalling is about the bundle: it stays selected even when moving
+    /// it takes the password (an app installed by root in /Applications).
+    @Test func bundleIsPreselectedEvenWhenItNeedsThePassword() async throws {
+        let folder = try TempFolder(); defer { folder.remove() }
+        let app = try await folder.app("Rooted", id: "com.test.rooted")
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: app.url.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: app.url.path) }
+        #expect(!app.isWritable)
+        let model = UninstallerModel()
+        model.findLeftovers = { _, _ in
+            [ScanItem(url: URL(fileURLWithPath: "/tmp/system-leftover"), size: 1, risk: .low, autoSelect: true,
+                      needsHelper: true, detail: "")]
+        }
+        await model.select(app)
+        let bundle = try #require(model.files.first)
+        #expect(bundle.needsHelper)
+        #expect(model.fileSelection == [app.url]) // the other password item waits for the user
+    }
+
+    /// A bundle refused for permissions under /Applications is retried with the password.
+    @Test func permissionFailuresAreRetriedAsAdmin() throws {
+        let bundle = ScanItem(url: URL(fileURLWithPath: "/Applications/Rooted.app"), size: 5, risk: .medium,
+                              autoSelect: true, needsHelper: false, detail: "Applicazione")
+        let cache = ScanItem(url: URL(fileURLWithPath: "/Users/x/Library/Caches/com.test"), size: 1, risk: .low,
+                             autoSelect: true, needsHelper: false, detail: "")
+        let outcomes = [
+            RemovalOutcome(url: bundle.url, result: .failure(.failed("permission"))),
+            RemovalOutcome(url: cache.url, result: .failure(.failed("permission"))), // not a system folder
+            RemovalOutcome(url: URL(fileURLWithPath: "/Applications/Other.app"), result: .failure(.outsideAllowedRoots)),
+        ]
+        #expect(UninstallerModel.retryableAsAdmin(outcomes, items: [bundle, cache]).map(\.url) == [bundle.url])
+    }
+
     /// While files are being removed, picking another app does nothing.
     @Test func selectionIsLockedWhileWorking() async throws {
         let folder = try TempFolder(); defer { folder.remove() }
@@ -112,6 +145,83 @@ struct TempFolder {
         try await Task.sleep(for: .milliseconds(500))
         #expect(model.root == nil)
         #expect(!model.isScanning)
+    }
+}
+
+@MainActor
+@Suite(.serialized) struct SelectionTests {
+    func item(_ path: String, keep: Bool = false) -> ScanItem {
+        ScanItem(url: URL(fileURLWithPath: path), size: 1, risk: .low, autoSelect: false, needsHelper: false, detail: "")
+    }
+
+    /// "Seleziona tutto" follows the filter and never takes the copy that must stay.
+    @Test func selectAllRespectsFilterAndKeptCopies() throws {
+        let model = AppModel()
+        let keep = item("/Users/x/Documents/a.pdf")
+        let copy = item("/Users/x/Downloads/a.pdf")
+        let other = item("/Users/x/Downloads/b.pdf")
+        let report = ScanReport(moduleID: "duplicates", categories: [
+            ScanCategory(id: "g", title: "a.pdf", items: [keep, copy], keep: keep.url),
+            ScanCategory(id: "h", title: "b.pdf", items: [other]),
+        ])
+        model.modules["duplicates"]?.report = report
+        model.selectAll(in: "duplicates")
+        #expect(model.selection == [copy.url, other.url])
+        model.deselectAll(in: "duplicates", matching: "b.pdf")
+        #expect(model.selection == [copy.url])
+        model.deselectAll(in: "duplicates")
+        model.selectAll(in: "duplicates", matching: "Downloads/a")
+        #expect(model.selection == [copy.url])
+    }
+
+    /// Emptying the Trash deletes: "move to the Trash" would be a no-op there.
+    @Test func trashModuleAlwaysDeletes() {
+        #expect(AppModel.effectiveMode(moduleID: TrashModule.id, chosen: .trash) == .delete)
+        #expect(AppModel.effectiveMode(moduleID: TrashModule.id, chosen: .dryRun) == .dryRun)
+        #expect(AppModel.effectiveMode(moduleID: SystemJunkModule.id, chosen: .trash) == .trash)
+    }
+
+    @Test func spaceLensSelectAllSkipsAggregates() async throws {
+        let folder = try TempFolder(); defer { folder.remove() }
+        try folder.file("tree/big.bin", bytes: 20_000_000)
+        try folder.file("tree/small.txt", bytes: 10)
+        let model = SpaceLensModel()
+        model.scan(folder.url.appendingPathComponent("tree"))
+        for _ in 0..<200 where model.isScanning { try await Task.sleep(for: .milliseconds(20)) }
+        let root = try #require(model.root)
+        #expect(root.children.contains { $0.isAggregate })
+        model.selectAll()
+        #expect(model.selection.count == 1)
+        #expect(model.selectedNodes().map(\.name) == ["big.bin"])
+        model.deselectAll()
+        #expect(model.selection.isEmpty)
+    }
+}
+
+@Suite struct ProtectionFilterTests {
+    func finding(_ title: String, _ severity: Finding.Severity, category: FindingCategory = .persistence,
+                 isNew: Bool = false, path: String? = nil, reasons: [String] = ["motivo"]) -> Finding {
+        var finding = Finding(category: category, key: title, severity: severity, title: title,
+                              path: path.map { URL(fileURLWithPath: $0) }, reasons: reasons)
+        finding.isNew = isNew
+        return finding
+    }
+
+    @Test func protectionFilterNarrowsBySeverityAndText() {
+        let all = [
+            finding("Zeta agent", .warning, isNew: true, path: "/Users/x/Library/LaunchAgents/zeta.plist"),
+            finding("Alpha daemon", .danger, category: .process),
+            finding("Beta info", .info, reasons: ["firma mancante"]),
+            finding("Gamma", .warning),
+        ]
+        let warnings = ProtectionModel.filter(all, minimum: .warning, onlyNew: false, search: "")
+        // Dangers first, then the new one, then by title.
+        #expect(warnings.map(\.title) == ["Alpha daemon", "Zeta agent", "Gamma"])
+        #expect(ProtectionModel.filter(all, minimum: .danger, onlyNew: false, search: "").map(\.title) == ["Alpha daemon"])
+        #expect(ProtectionModel.filter(all, minimum: .info, onlyNew: false, search: "").count == 4)
+        #expect(ProtectionModel.filter(all, minimum: .info, onlyNew: true, search: "").map(\.title) == ["Zeta agent"])
+        #expect(ProtectionModel.filter(all, minimum: .info, onlyNew: false, search: "firma").map(\.title) == ["Beta info"])
+        #expect(ProtectionModel.filter(all, minimum: .info, onlyNew: false, search: "launchagents").map(\.title) == ["Zeta agent"])
     }
 }
 

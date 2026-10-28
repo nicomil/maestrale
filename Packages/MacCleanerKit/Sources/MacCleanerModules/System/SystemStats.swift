@@ -51,6 +51,20 @@ public final class SystemMonitor: @unchecked Sendable {
         return Double(used - previous.used) / Double(total - previous.total)
     }
 
+    /// Activity Monitor's "Cached Files": file-backed pages plus purgeable
+    /// memory, what `purge` throws away.
+    static func cachedFiles() -> UInt64 {
+        var stats = vm_statistics64()
+        var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &stats) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count)
+            }
+        }
+        guard result == KERN_SUCCESS else { return 0 }
+        return (UInt64(stats.external_page_count) + UInt64(stats.purgeable_count)) * UInt64(getpagesize())
+    }
+
     static func memory() -> (used: UInt64, total: UInt64) {
         var stats = vm_statistics64()
         var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size)

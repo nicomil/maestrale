@@ -108,4 +108,19 @@ import Testing
         """)
         #expect(RuleEngine(home: box.allowed).evaluate(set).categories.isEmpty)
     }
+
+    /// The Trash must empty everything, so it asks for the empty items too.
+    @Test func emptyItemsAreKeptWhenAsked() throws {
+        let box = try Sandbox(); defer { box.remove() }
+        try FileManager.default.createDirectory(at: box.allowed.appendingPathComponent(".Trash/empty folder"),
+                                                withIntermediateDirectories: true)
+        try box.file(".Trash/empty.txt", in: box.allowed, bytes: 0)
+        let set = try rules("""
+        {"version": 1, "rules": [{"id": "t", "category": "trash", "title": "Cestino", "paths": ["~/.Trash"]}]}
+        """)
+        #expect(RuleEngine(home: box.allowed).evaluate(set).categories.isEmpty)
+        let names = RuleEngine(home: box.allowed, includeEmptyItems: true).evaluate(set)
+            .categories.flatMap(\.items).map(\.displayName).sorted()
+        #expect(names == ["empty folder", "empty.txt"])
+    }
 }
