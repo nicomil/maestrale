@@ -140,13 +140,13 @@ struct ActivityView: View {
                         }
                     }
                 }
-                .width(min: 220, ideal: 320)
+                .width(min: 180, ideal: 240)
                 TableColumn("PID") { row in Text(String(row.process.pid)).monospacedDigit() }.width(60)
                 TableColumn("CPU") { row in Text(String(format: "%.0f%%", row.cpu * 100)).monospacedDigit() }.width(60)
-                TableColumn("Memoria") { row in Text(formatBytes(Int64(row.memory))).monospacedDigit() }.width(90)
-                TableColumn("Rete") { row in Text(rate(row.networkInPerSecond + row.networkOutPerSecond)).monospacedDigit() }.width(90)
-                TableColumn("Disco") { row in Text(rate(row.diskReadPerSecond + row.diskWritePerSecond)).monospacedDigit() }.width(90)
-                TableColumn("Firma") { row in Text(signatureText(row)).foregroundStyle(.secondary) }.width(140)
+                TableColumn("Memoria") { row in Text(formatBytes(Int64(row.memory))).monospacedDigit() }.width(80)
+                TableColumn("Rete") { row in Text(rate(row.networkInPerSecond + row.networkOutPerSecond)).monospacedDigit() }.width(80)
+                TableColumn("Disco") { row in Text(rate(row.diskReadPerSecond + row.diskWritePerSecond)).monospacedDigit() }.width(80)
+                TableColumn("Firma") { row in Text(signatureText(row)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail) }.width(120)
                 TableColumn("") { row in
                     HStack {
                         if let path = row.process.path {
@@ -158,7 +158,7 @@ struct ActivityView: View {
                         }
                     }
                 }
-                .width(120)
+                .width(90)
             }
             Divider()
             HStack {

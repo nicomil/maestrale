@@ -1,65 +1,136 @@
 # MacCleaner
 
-App macOS personale per pulire il Mac, ispirata alle funzioni di CleanMyMac 5.
-Le specifiche funzionali sono in `docs/spec/`, il piano completo in `docs/spec/README.md`.
+Un'app macOS personale, scritta in Swift 6 e SwiftUI, che replica le funzioni di CleanMyMac 5: pulizia, spazio, applicazioni, protezione e velocità. Nessun abbonamento, nessuna telemetria, nessun demone sempre acceso: ogni operazione parte da un clic, viene mostrata prima di essere eseguita e finisce nel log.
 
-## Requisiti
-- macOS 14 o successivo, Xcode (anche se `xcode-select` punta ai Command Line Tools)
-- XcodeGen (`brew install xcodegen`)
+> Sito di presentazione con screenshot: **https://nicomil.github.io/maccleaner/**
 
-## Comandi
-```bash
-# Test della logica (regole, rimozione sicura, helper privilegiato)
-cd Packages/MacCleanerKit && DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
+![Smart Care](docs/shots/01-smart-care.png)
 
-# Test dell'app (Disinstallazione, Space Lens, duplicati), girano dentro l'app
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
-  -project MacCleaner.xcodeproj -scheme MacCleaner -derivedDataPath build/DerivedData test
+![Pulizia sistema](docs/shots/02-pulizia-sistema.png)
 
-# Progetto Xcode e build dell'app
-xcodegen generate
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
-  -project MacCleaner.xcodeproj -scheme MacCleaner -derivedDataPath build/DerivedData build
-open build/DerivedData/Build/Products/Debug/MacCleaner.app
+## In breve
 
-# Prova delle scansioni da Terminale (sola lettura, non rimuove nulla)
-cd Packages/MacCleanerKit && swift build -c release --product mccli
-.build/release/mccli junk|trash|large|duplicates|similar|orphans|apps|updates|privacy|launch|mail|installers|malware|posture|processes|signatures
+| | |
+|---|---|
+| Piattaforma | macOS 14 o successivo, Apple Silicon e Intel |
+| Linguaggio | Swift 6 (strict concurrency), SwiftUI, Swift Package Manager |
+| Codice | 69 file Swift, circa 10.000 righe, 140 test automatici |
+| Firma | ad-hoc con hardened runtime, per uso personale |
+| Dipendenze esterne | solo libyara 4.5.4 (BSD-3), compilata nel pacchetto |
+
+## Funzioni
+
+### Pulizia
+- **Pulizia sistema**: cache utente e di sistema, cache delle app e degli strumenti di sviluppo, log, file di Xcode. Le cache delle app aperte sono escluse e il controllo è ripetuto subito prima della pulizia.
+- **Cestini**: svuota il Cestino dell'utente e dei volumi esterni, compresi i file bloccati e gli elementi vuoti.
+- **Allegati di Mail**: copie locali degli allegati che Mail può riscaricare.
+- **Installer e immagini disco**: `.dmg` e `.pkg` già usati, riconosciuti dall'attributo di quarantena.
+
+### Spazio
+- **Space Lens**: mappa del disco cartella per cartella, con selezione multipla e rimozione diretta.
+- **File grandi e vecchi**: soglia di dimensione configurabile, ordinati per età.
+- **Duplicati** e **Immagini simili**: hash dei contenuti e confronto percettivo; resta sempre almeno una copia.
+
+### Applicazioni
+- **Disinstallazione**: bundle più Application Support, Containers, preferenze, cache, launch agent. Le app di proprietà di root vengono rimosse con la password tramite l'helper.
+- **Aggiornamenti**: App Store, Sparkle e Homebrew in un'unica lista, che si aggiorna da sola quando una versione è stata installata.
+- **Avanzi di app rimosse**: cartelle orfane che nessuna app, helper, processo o servizio launchd reclama più, con l'età dell'ultima modifica.
+
+### Protezione e velocità
+- **Protezione**: 14 controlli (elementi di login e launch agent, estensioni di sistema e kernel, estensioni e dirottamento dei browser, cron e shell, configurazione di rete, profili, TCC, certificati radice, XProtect, firme delle app, installazioni recenti, postura di sicurezza), più la scansione YARA con regole fornite dall'utente e una quarantena con ripristino.
+- **Attività**: processi che consumano CPU, memoria, energia e rete.
+- **Privacy**: cronologia, cookie e dati dei browser, elementi recenti, reti Wi-Fi ricordate, permessi delle app.
+- **Prestazioni**: libera la RAM, elimina le istantanee locali di Time Machine, svuota la cache DNS, reindicizza Spotlight, ripara i permessi, velocizza Mail. Ogni scheda riporta cosa è cambiato davvero (per esempio "File in cache: 3,1 GB → 0,4 GB").
+
+### Trasversali
+- **Smart Care**: una scansione che tocca pulizia, protezione, aggiornamenti e prestazioni, con riepilogo.
+- Monitor nella barra dei menu, scansioni pianificate, modalità predefinita (Cestino, eliminazione, prova), filtro e "seleziona tutto / deseleziona tutto" in ogni elenco.
+- `mccli`: la stessa logica di scansione da Terminale, in sola lettura.
+
+## Come è fatto
+
+```
+MacCleaner.app (SwiftUI)
+ ├─ MacCleanerCore        regole, SafeRemover, PinnedFileSystem, log delle operazioni
+ ├─ MacCleanerModules     un modulo per funzione (Apps/, Protection/, System/, …)
+ ├─ CYara                 libyara compilata senza OpenSSL e senza scansione dei processi
+ ├─ mchelper              unico eseguibile che tocca i file di sistema, lanciato come root
+ └─ mccli                 scansioni da Terminale
 ```
 
-## Sicurezza
-- Di default i file vanno nel **Cestino**. C'è una modalità "Prova" che non rimuove nulla.
-- `SafeRemover` rimuove solo dentro le cartelle elencate in `AllowedRoots`, risolve i symlink prima del controllo e rifiuta i file protetti da SIP.
-- Ogni operazione è registrata in `~/Library/Logs/MacCleaner/operations.log`.
-- Le categorie ad alto rischio non sono mai preselezionate. Gli elementi di sistema chiedono la password di amministratore e accettano solo un elenco chiuso di operazioni (`AdminOperation`); anche loro seguono la modalità scelta e, con "Sposta nel Cestino", finiscono nel Cestino invece di essere eliminati.
-- I file di sistema non sono mai toccati da `rm` o `mv` con percorsi completi. Dopo la password, la shell di root esegue `mchelper` (in `Contents/MacOS` dell'app), che apre ogni cartella partendo da `/` senza seguire symlink e poi elimina o sposta relativamente alla cartella aperta (`PinnedFileSystem`). Uno scambio di cartelle con un symlink mentre la finestra della password è aperta fa fallire l'operazione invece di portarla altrove. Nel Cestino un elemento esistente non viene mai sostituito ("nome 2", "nome 3"…). L'helper controlla da sé che ogni elemento sia dentro le cartelle di sistema consentite (`SystemRoots`) e non protetto da SIP, e non attraversa altri volumi. Prima di eseguirlo, la shell di root lo copia in una cartella nuova scrivibile solo da root e ne verifica lo SHA-256, così non può essere sostituito tra il controllo e l'esecuzione.
-- Prima di cancellare cronologia, cookie o password da un database di un browser, ne viene salvata una copia completa nel Cestino. La copia è creata da SQLite (`VACUUM INTO`), include le modifiche recenti ancora nel file `-wal` e viene riletta prima di toccare l'originale; se non riesce, la pulizia non parte. La lettura dei database vede anche le modifiche nel file `-wal`.
-- Duplicati: sono preselezionate solo le copie in Download, e prima della pulizia il programma ricontrolla che la copia che resta esista ancora e sia identica.
-- Cestini: svuotare il Cestino elimina per sempre (spostare nel Cestino ciò che è già nel Cestino non farebbe nulla): le scelte sono "Svuota" e "Prova". Vengono eliminati anche gli elementi vuoti e i file bloccati (flag `uchg`), che vengono sbloccati solo dentro le cartelle del Cestino e solo in questo modulo.
-- Disinstallazione: i dati delle app (Application Support, Containers, Group Containers) non sono mai preselezionati. Il bundle dell'app è sempre preselezionato; se appartiene a root (spostare una cartella richiede il permesso di scrittura sulla cartella stessa, non solo su `/Applications`) viene rimosso con la password tramite `mchelper`, e un rifiuto per permessi viene ritentato una volta nello stesso modo. Durante la disinstallazione la lista delle app è bloccata, i file da rimuovere sono fissati al momento della conferma e i risultati di una ricerca superata da un'altra selezione vengono scartati.
-- Avanzi di app rimosse: una cartella è elencata solo se nessuna app installata, helper, processo in esecuzione, app nota a Launch Services o servizio launchd (plist in LaunchAgents/LaunchDaemons, o label caricata in `launchctl list`) la reclama. Ogni elemento mostra da quanto non viene modificato; entro 30 giorni è a rischio alto ("forse ancora in uso"). Niente è preselezionato.
-- Aggiornamenti: l'elenco rilegge le versioni installate quando la schermata torna in primo piano e dopo ogni azione, così un'app già aggiornata sparisce da sola. Le voci dell'App Store che richiedono un macOS più recente e i cask Homebrew segnalati da `--greedy` ma già aggiornati dall'app stessa non vengono mostrati.
-- Installer: sono preselezionati solo `.dmg` non cifrati e `.pkg` di app già installate che macOS ha segnato come scaricati da internet (attributo di quarantena). Un'immagine creata dall'utente, cifrata o no, e i formati `.sparseimage`, `.img` e `.iso` non sono mai preselezionati.
-- Pulizia sistema: le cache di un'app aperta sono escluse, anche quando stanno nel suo container (`~/Library/Containers/<id>/…`) o in cartelle come `<id>.ShipIt`. Il controllo è ripetuto subito prima della pulizia.
-- Elementi di avvio: gli agenti, anche quelli in `/Library/LaunchAgents`, vengono fermati nella sessione dell'utente; i servizi di sistema con la password. Il plist va nel Cestino solo dopo aver verificato che launchd non lo abbia più caricato; altrimenti viene mostrato un errore e il plist resta al suo posto.
-- Protezione: l'origine di un'estensione dei browser Chromium si basa su ciò che il browser ha registrato nelle preferenze del profilo, non sull'`update_url` del manifest, che chiunque può scrivere.
-- Protezione (M7, vedi `docs/spec/protection-upgrade.md`): la scansione standard non chiede mai la password. Il "Controllo approfondito" esegue una sola operazione privilegiata di sola lettura (`AdminOperation.collectSystemEvidence`), con un elenco fisso di comandi senza argomenti dall'esterno. Tutto ciò che viene letto (plist, manifest, script, output dei comandi, regole YARA) è trattato come dato: parsato con limiti di dimensione, mai eseguito.
-- Quarantena: i file sospetti non vanno nel Cestino ma in `~/Library/Application Support/MacCleaner/Quarantine/<id>/`, spostati con le stesse operazioni relative al descrittore del helper (`PinnedFileSystem`), con tutti i permessi tolti e l'attributo di quarantena aggiunto. I file di sistema finiscono in `/Library/Application Support/MacCleaner/Quarantine` tramite `mchelper`. Ripristino ed eliminazione passano dalle stesse operazioni.
-- Regole YARA e liste di hash: l'app non scarica nulla. L'utente aggiunge i file dalle Impostazioni, vede lo SHA-256 per confrontarlo con quello pubblicato, e un file di regole che non compila viene rifiutato. libyara (4.5.4, BSD-3) è compilata nel pacchetto senza OpenSSL e senza scansione dei processi.
+- Ogni modulo implementa `CleanerModule`: produce un `ScanReport` di categorie e voci con dimensione, rischio e preselezione. L'interfaccia è la stessa per tutti.
+- `SafeRemover` è l'unico punto che rimuove file. Accetta solo percorsi dentro le cartelle consentite, risolve i symlink prima del controllo, rifiuta i file protetti da SIP e registra tutto in `~/Library/Logs/MacCleaner/operations.log`.
+- Le operazioni da amministratore sono un elenco chiuso (`AdminOperation`). Dopo la password, la shell di root copia `mchelper` in una cartella scrivibile solo da root, ne verifica lo SHA-256 e lo esegue. L'helper apre ogni cartella partendo da `/` senza seguire symlink e lavora relativamente al descrittore aperto (`PinnedFileSystem`), quindi uno scambio di cartelle mentre la finestra della password è aperta fa fallire l'operazione invece di spostarla altrove.
+- Le specifiche funzionali in `docs/spec/` vengono da uno studio di CleanMyMac 5.7.2 (analisi statica con rea e Ghidra, cattura dinamica con `fs_usage`). Non contengono codice, testi o asset di MacPaw: le regole sono riscritte da zero sulla conoscenza pubblica di macOS.
+- L'ultimo ciclo di lavoro è documentato con il metodo BMAD in `docs/bmad/` (brief, PRD, architettura, storie, QA).
 
-## Accesso completo al disco
-Molte cartelle (Safari, profili dei browser, dati di altre app) sono leggibili solo con l'Accesso completo al disco: Impostazioni di Sistema → Privacy e sicurezza → Accesso completo al disco → aggiungi MacCleaner. Con la firma ad-hoc macOS può dimenticare il permesso a ogni nuova build: se i risultati spariscono, toglilo e rimettilo.
+## Build, test e installazione
+
+Requisiti: Xcode (anche se `xcode-select` punta ai Command Line Tools) e XcodeGen (`brew install xcodegen`).
+
+```bash
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+
+# Test della logica: regole, rimozione sicura, moduli, helper
+(cd Packages/MacCleanerKit && swift test)
+
+# Progetto Xcode, build Release e installazione
+xcodegen generate
+xcodebuild -project MacCleaner.xcodeproj -scheme MacCleaner \
+  -configuration Release -derivedDataPath build/DerivedData build
+ditto build/DerivedData/Build/Products/Release/MacCleaner.app /Applications/MacCleaner.app
+
+# Test dell'app (modelli di Disinstallazione, Space Lens, selezioni, filtri)
+xcodebuild -project MacCleaner.xcodeproj -scheme MacCleaner \
+  -derivedDataPath build/DerivedData -only-testing:MacCleanerTests test
+
+# Scansioni da Terminale (sola lettura)
+(cd Packages/MacCleanerKit && swift build -c release --product mccli)
+Packages/MacCleanerKit/.build/release/mccli junk|trash|large|duplicates|similar|orphans|apps|updates|privacy|launch|mail|installers|malware|posture|processes|signatures
+```
+
+### Accesso completo al disco
+Safari, i profili dei browser e i dati di molte app sono leggibili solo con l'Accesso completo al disco: Impostazioni di Sistema → Privacy e sicurezza → Accesso completo al disco → aggiungi MacCleaner. Con la firma ad-hoc macOS può dimenticare il permesso a ogni nuova build: se i risultati spariscono, toglilo e rimettilo.
+
+## Sicurezza
+
+Principi validi ovunque:
+- Di default i file vanno nel **Cestino**. La modalità "Prova" non rimuove nulla. Le categorie a rischio alto non sono mai preselezionate.
+- Niente viene rimosso senza una conferma che mostra elementi e dimensione totale.
+- Ogni operazione, riuscita o rifiutata, è nel log delle operazioni.
+- Tutto ciò che l'app legge da disco o da un comando (plist, manifest, script, output, regole YARA) è trattato come dato: parsato con limiti di dimensione, mai eseguito.
+
+<details>
+<summary>Dettagli per modulo</summary>
+
+- **Cestini**: svuotare elimina per sempre (spostare nel Cestino ciò che è già nel Cestino non farebbe nulla), quindi le scelte sono "Svuota" e "Prova". I file bloccati (flag `uchg`) vengono sbloccati solo dentro le cartelle del Cestino e solo in questo modulo.
+- **Disinstallazione**: i dati delle app non sono mai preselezionati, il bundle sì. Se il bundle appartiene a root viene rimosso con la password tramite `mchelper`, e un rifiuto per permessi viene ritentato una volta nello stesso modo. Durante la disinstallazione la lista è bloccata e i file da rimuovere sono fissati al momento della conferma.
+- **Avanzi di app rimosse**: una cartella è elencata solo se nessuna app installata, helper, processo in esecuzione, app nota a Launch Services o servizio launchd la reclama. Entro 30 giorni dall'ultima modifica è a rischio alto. Niente è preselezionato.
+- **Aggiornamenti**: l'elenco rilegge le versioni installate quando la schermata torna in primo piano e dopo ogni azione. Le voci dell'App Store che richiedono un macOS più recente e i cask Homebrew già aggiornati dall'app stessa non vengono mostrati.
+- **Installer**: sono preselezionati solo `.dmg` non cifrati e `.pkg` di app già installate che macOS ha segnato come scaricati da internet. Immagini create dall'utente, `.sparseimage`, `.img` e `.iso` non sono mai preselezionati.
+- **Pulizia sistema**: le cache di un'app aperta sono escluse, anche dentro il suo container o in cartelle come `<id>.ShipIt`.
+- **Duplicati**: preselezionate solo le copie in Download; prima della pulizia il programma ricontrolla che la copia che resta esista ancora e sia identica.
+- **Privacy**: prima di cancellare cronologia, cookie o password da un database di un browser ne viene salvata una copia completa nel Cestino, creata da SQLite (`VACUUM INTO`) e riletta prima di toccare l'originale. Se la copia non riesce, la pulizia non parte.
+- **Elementi di avvio**: gli agenti vengono fermati nella sessione dell'utente, i servizi di sistema con la password. Il plist va nel Cestino solo dopo aver verificato che launchd non lo abbia più caricato.
+- **Protezione**: la scansione standard non chiede mai la password. Il "Controllo approfondito" esegue una sola operazione privilegiata di sola lettura con un elenco fisso di comandi. L'origine di un'estensione Chromium viene dalle preferenze del profilo, non dall'`update_url` del manifest.
+- **Quarantena**: i file sospetti vanno in `~/Library/Application Support/MacCleaner/Quarantine/<id>/` (o nella cartella di sistema equivalente tramite `mchelper`), con i permessi tolti e l'attributo di quarantena aggiunto. Ripristino ed eliminazione passano dalle stesse operazioni.
+- **Regole YARA e liste di hash**: l'app non scarica nulla. L'utente aggiunge i file dalle Impostazioni, vede lo SHA-256 e un file che non compila viene rifiutato.
+- **Nel Cestino** un elemento esistente non viene mai sostituito ("nome 2", "nome 3"…).
+
+</details>
 
 ## Stato
+
 | Milestone | Stato |
 |---|---|
-| Fase 0: rea + Ghidra | fatto |
-| Fase 1: specifiche (statica + cattura dinamica) | fatto |
-| M1: core, pulizia sistema, cestini | fatto (senza helper) |
-| M2: Space Lens, file grandi e vecchi, duplicati, immagini simili | fatto |
-| M3: disinstallazione, avanzi di app rimosse, aggiornamenti | fatto |
-| M4: privacy, prestazioni, operazioni da amministratore | fatto (password macOS al posto del demone, vedi `docs/spec/helper.md`) |
-| M5: protezione (euristiche), allegati di Mail, installer | fatto |
-| M6: Smart Care, monitor nella barra dei menu, scansioni pianificate, impostazioni | fatto |
-| Rifinitura UI/UX: icona, benvenuto, badge in barra laterale, filtro, annulla scansione, conferma con "Apri Cestino", menu contestuale | fatto |
-| Ciclo BMAD dopo il feedback d'uso (Cestino, disinstallazione app di root, aggiornamenti coerenti, seleziona tutto, avanzi più sicuri, Protezione a due colonne), vedi `docs/bmad/` | fatto |
+| Specifiche da CleanMyMac 5 (analisi statica e dinamica) | fatto |
+| M1 core, pulizia sistema, cestini | fatto |
+| M2 Space Lens, file grandi e vecchi, duplicati, immagini simili | fatto |
+| M3 disinstallazione, avanzi, aggiornamenti | fatto |
+| M4 privacy, prestazioni, operazioni da amministratore | fatto |
+| M5 protezione, allegati di Mail, installer | fatto |
+| M6 Smart Care, barra dei menu, scansioni pianificate, impostazioni | fatto |
+| M7 protezione orientata alla sicurezza (14 controlli, YARA, quarantena) | fatto |
+| Ciclo BMAD dopo il feedback d'uso (`docs/bmad/`) | fatto |
+
+Progetto a uso personale, senza licenza di ridistribuzione. libyara è inclusa con la sua licenza BSD-3.

@@ -1,12 +1,12 @@
 # Esito di sviluppo e verifica (Dev + QA)
 
-Data: 27 ottobre 2026.
+Data: 27 ottobre 2026, aggiornato il 28 ottobre 2026.
 
 ## Test automatici
 | Suite | Comando | Esito |
 |---|---|---|
 | MacCleanerCore (regole, rimozione sicura, helper) | `swift test` nel pacchetto | 26 test, tutti verdi (3 nuovi: elementi vuoti del Cestino, sblocco dei file bloccati, nessuno sblocco fuori dalle cartelle consentite) |
-| MacCleanerModules (app, aggiornamenti, avanzi, protezione) | `swift test` nel pacchetto | 100 test, tutti verdi (5 nuovi: aggiornamento ancora pendente per fonte, App Store e macOS minimo, parsing di `launchctl list`, classificazione per età, label launchd che proteggono gli avanzi) |
+| MacCleanerModules (app, aggiornamenti, avanzi, protezione) | `swift test` nel pacchetto | 103 test, tutti verdi (8 nuovi: aggiornamento ancora pendente per fonte, App Store e macOS minimo, parsing di `launchctl list`, classificazione per età, label launchd che proteggono gli avanzi) |
 | MacCleanerTests (modelli dell'app) | `xcodebuild test -only-testing:MacCleanerTests` | 11 test, tutti verdi (5 nuovi: bundle preselezionato con password, secondo tentativo con password, seleziona tutto con filtro e copie da tenere, Space Lens senza aggregati, modalità effettiva del Cestino, filtro di Protezione) |
 
 Build Debug dell'app: riuscita (prodotta dal comando di test).
@@ -23,6 +23,10 @@ Build Debug dell'app: riuscita (prodotta dal comando di test).
 | S4 Seleziona tutto | fatta | moduli a elenco, Space Lens, Disinstallazione, Privacy |
 | S5 Avanzi più sicuri | fatta | label launchd (plist e `launchctl list`); età e rischio per elemento |
 | S6 Protezione | fatta | filtro per gravità, "Solo nuovi", ricerca; colonna categorie; righe compatte espandibili; menu secondario |
+| S7 Feedback di Manutenzione (richiesta successiva al feedback d'uso) | fatta | `MaintenanceTask.run` restituisce un riepilogo misurato (cache RAM prima/dopo, istantanee contate, dimensione del database di Mail); `MaintenanceError.nothingToDo` per lo stato "niente da fare"; errori reali nella scheda. Test `SystemModulesTests.maintenanceSummariesTellWhatChanged` |
+| S8 Versione e build negli Aggiornamenti | fatta | `AppUpdate.versionLine` mostra "0.65.2 (111) → 0.65.2 (113)" quando cambia solo il build (caso reale: cmux). Test `AppsTests.versionLineShowsBuildsWhenMarketingVersionsMatch` |
+| S9 XProtect Remediator: falso "pericolo" | fatta | `status_code 20` arriva con "NoThreatDetected" e veniva letto come rilevamento; ora contano solo `status_message` e `subject`, e il modulo viene dal nome del processo quando manca nel JSON. Test `PostureTests.remediatorEventsAreParsed` (esteso) e `remediatorModuleComesFromTheProcessNameWhenTheEventLacksIt` |
+| S10 Attività: colonna azioni tagliata | fatta | le colonne sommavano 970 pt su 930 disponibili alla larghezza minima; ridotte (Processo 240, Memoria/Rete/Disco 80, Firma 120, azioni 90) |
 
 ## Cose da provare a mano (non automatizzabili qui)
 1. Cestini: scansione, "Svuota", verifica che il Cestino sia vuoto anche con un file bloccato (Finder → Informazioni → Bloccato).

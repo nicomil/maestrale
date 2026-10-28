@@ -91,17 +91,20 @@ public struct XProtectCheck: ProtectionCheck {
         var detections: [Detection] = []
         for rawLine in text.split(whereSeparator: \.isNewline) {
             let line = String(rawLine)
-            if let match = line.firstMatch(of: /XProtectRemediator(\w+)\[/) { modules.insert(String(match.1)) }
+            let processModule = line.firstMatch(of: /XProtectRemediator(\w+)\[/).map { String($0.1) }
+            if let processModule { modules.insert(processModule) }
             guard let start = line.firstIndex(of: "{"), line.contains("XPEvent") || line.contains("status_code") else { continue }
             let json = String(line[start...])
             guard let data = json.data(using: .utf8),
                   let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
-            let module = (event["module"] as? String ?? event["process_name"] as? String ?? "?")
+            // The module is in the JSON on some systems and only in the process name on others.
+            let module = (event["module"] as? String ?? event["process_name"] as? String ?? processModule ?? "?")
                 .replacingOccurrences(of: "XProtectRemediator", with: "")
-            let status = event["status_code"] as? Int ?? 0
             let subject = event["subject"] as? String
-            let message = (event["status_message"] as? String ?? "").lowercased()
-            let detected = status != 0 || (subject != nil && !subject!.isEmpty) || message.contains("detect") || message.contains("remediat")
+            let message = (event["status_message"] as? String ?? "").lowercased().replacingOccurrences(of: " ", with: "")
+            // status_code is not a verdict (20 goes with "NoThreatDetected"): trust the message and the subject.
+            let negative = message.contains("nothreat") || message.contains("notdetected") || message.contains("nothing")
+            let detected = (subject?.isEmpty == false) || (!negative && (message.contains("detect") || message.contains("remediat")))
             if detected {
                 detections.append(Detection(module: module, subject: subject?.isEmpty == false ? subject : nil, line: json))
             }

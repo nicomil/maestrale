@@ -46,6 +46,15 @@ public struct AppUpdate: Identifiable, Sendable, Hashable {
             return Version.normalized(availableVersion).isEmpty || Version.isNewer(availableVersion, than: installed.version)
         }
     }
+
+    /// "1.2 → 1.3", or "1.2 (111) → 1.2 (113)" when only the build number changes.
+    public var versionLine: String {
+        if let availableBuild, availableBuild != app.build,
+           Version.normalized(availableVersion) == Version.normalized(app.version) {
+            return "\(app.version) (\(app.build)) → \(availableVersion) (\(availableBuild))"
+        }
+        return "\(app.version) → \(availableVersion)"
+    }
 }
 
 /// Compares version strings numerically ("1.10" > "1.9", "2.0.1" > "2.0").

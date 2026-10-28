@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MacCleaner</title>
+<meta name="description" content="MacCleaner: app macOS personale in Swift 6 e SwiftUI che replica le funzioni di CleanMyMac 5. Pulizia, spazio, applicazioni, protezione e velocità, senza abbonamento né telemetria.">
+<link rel="icon" href="assets/favicon.png">
+<meta property="og:title" content="MacCleaner">
+<meta property="og:description" content="Pulizia, spazio, applicazioni, protezione e velocità per il Mac. Open source, in Swift 6.">
+<meta property="og:image" content="https://nicomil.github.io/maccleaner/shots/01-smart-care.png">
+<style>
+:root {
+  --bg: #fbfaf8;
+  --bg-2: #f1efea;
+  --card: #ffffff;
+  --text: #1c1b19;
+  --muted: #6b6760;
+  --line: #e4e1da;
+  --accent: #e8921a;
+  --accent-2: #f6b63d;
+  --accent-text: #8a4f00;
+  --ok: #2f9e5b;
+  --shadow: 0 10px 40px rgba(60, 40, 0, .10), 0 1px 3px rgba(0,0,0,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141311;
+    --bg-2: #1c1a17;
+    --card: #211f1b;
+    --text: #f1ede6;
+    --muted: #a39d93;
+    --line: #2f2c27;
+    --accent: #f2a53a;
+    --accent-2: #f8c25c;
+    --accent-text: #f8c25c;
+    --ok: #4cc27a;
+    --shadow: 0 10px 40px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.4);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141311; --bg-2: #1c1a17; --card: #211f1b; --text: #f1ede6; --muted: #a39d93;
+  --line: #2f2c27; --accent: #f2a53a; --accent-2: #f8c25c; --accent-text: #f8c25c; --ok: #4cc27a;
+  --shadow: 0 10px 40px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.4);
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Inter, system-ui, sans-serif;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent-text); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.wrap { max-width: 1100px; margin: 0 auto; padding: 0 16px; }
+
+/* header */
+header.top {
+  position: sticky; top: 0; z-index: 10;
+  backdrop-filter: saturate(180%) blur(14px);
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  border-bottom: 1px solid var(--line);
+}
+header.top .wrap { display: flex; align-items: center; gap: 12px; height: 56px; }
+header.top img { width: 28px; height: 28px; border-radius: 7px; }
+header.top .name { font-weight: 700; letter-spacing: -.01em; }
+header.top nav { margin-left: auto; display: flex; gap: 18px; font-size: 14px; }
+header.top nav a { color: var(--muted); }
+header.top nav a:hover { color: var(--text); text-decoration: none; }
+@media (max-width: 640px) { header.top nav a:not(.gh) { display: none; } }
+
+/* hero */
+.hero { padding: 72px 0 40px; text-align: center; }
+.hero img.icon { width: 112px; height: 112px; border-radius: 26px; box-shadow: var(--shadow); }
+.hero h1 { font-size: clamp(36px, 6vw, 56px); letter-spacing: -.03em; margin: 24px 0 8px; line-height: 1.05; }
+.hero p.lead { font-size: clamp(17px, 2.2vw, 21px); color: var(--muted); max-width: 680px; margin: 0 auto 28px; }
+.cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 11px 18px; border-radius: 999px; font-weight: 600; font-size: 15px;
+  border: 1px solid var(--line); background: var(--card); color: var(--text);
+}
+.btn:hover { text-decoration: none; border-color: var(--accent); }
+.btn.primary { background: linear-gradient(135deg, var(--accent-2), var(--accent)); color: #2a1900; border-color: transparent; }
+.btn svg { width: 18px; height: 18px; }
+.hero .shot { margin: 44px auto 0; max-width: 1000px; }
+.shot img { width: 100%; height: auto; display: block; border-radius: var(--radius); box-shadow: var(--shadow); border: 1px solid var(--line); }
+
+/* stats */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 40px 0 0; }
+.stat { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; text-align: center; }
+.stat b { display: block; font-size: 26px; letter-spacing: -.02em; }
+.stat span { color: var(--muted); font-size: 13px; }
+
+/* sections */
+section { padding: 64px 0; }
+section + section { border-top: 1px solid var(--line); }
+h2 { font-size: clamp(26px, 3.6vw, 34px); letter-spacing: -.02em; margin: 0 0 8px; }
+.kicker { color: var(--accent-text); font-weight: 700; text-transform: uppercase; letter-spacing: .08em; font-size: 12px; }
+p.sub { color: var(--muted); max-width: 720px; margin: 0 0 32px; font-size: 17px; }
+
+.feature { display: grid; grid-template-columns: 1fr 1.4fr; gap: 36px; align-items: center; padding: 28px 0; }
+.feature.flip { grid-template-columns: 1.4fr 1fr; }
+.feature.flip .text { order: 2; }
+.feature h3 { font-size: 22px; margin: 0 0 8px; letter-spacing: -.01em; }
+.feature p { color: var(--muted); margin: 0 0 12px; }
+.feature ul { margin: 0; padding-left: 18px; color: var(--muted); }
+.feature li { margin: 4px 0; }
+.feature li b { color: var(--text); font-weight: 600; }
+@media (max-width: 820px) {
+  .feature, .feature.flip { grid-template-columns: 1fr; }
+  .feature.flip .text { order: 0; }
+}
+
+/* grid of small cards */
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
+.card h4 { margin: 0 0 6px; font-size: 16px; }
+.card p { margin: 0; color: var(--muted); font-size: 14px; }
+.card .ic { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; margin-bottom: 12px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent-text); font-size: 18px; }
+
+/* architecture */
+.arch { display: grid; grid-template-columns: 1fr; gap: 10px; max-width: 720px; }
+.arch .box { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; grid-template-columns: 180px 1fr; gap: 12px; align-items: baseline; }
+.arch .box code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; color: var(--accent-text); }
+.arch .box span { color: var(--muted); font-size: 14px; }
+.arch .box.app { border-color: var(--accent); }
+.arch .box.root { background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
+@media (max-width: 560px) { .arch .box { grid-template-columns: 1fr; } }
+
+/* security */
+.sec { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.sec .card h4::before { content: "✓ "; color: var(--ok); }
+
+/* code */
+pre { background: #1c1a17; color: #f1ede6; border-radius: 12px; padding: 16px 18px; overflow: auto; font-size: 13.5px; line-height: 1.5; border: 1px solid #2f2c27; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+p code { background: var(--bg-2); padding: 1px 6px; border-radius: 6px; font-size: .92em; }
+
+/* gallery */
+.gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.gallery figure { margin: 0; }
+.gallery figcaption { font-size: 13px; color: var(--muted); margin-top: 8px; }
+
+footer { padding: 40px 0 60px; color: var(--muted); font-size: 14px; border-top: 1px solid var(--line); }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
+
+/* lightbox */
+dialog.lb { border: 0; padding: 0; background: transparent; max-width: min(96vw, 1600px); width: auto; }
+dialog.lb::backdrop { background: rgba(0,0,0,.78); backdrop-filter: blur(6px); }
+dialog.lb img { width: 100%; height: auto; max-height: 92vh; object-fit: contain; border-radius: 10px; }
+.shot a, .gallery a { cursor: zoom-in; }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <img src="assets/icon.png" alt="">
+    <span class="name">MacCleaner</span>
+    <nav>
+      <a href="#funzioni">Funzioni</a>
+      <a href="#protezione">Protezione</a>
+      <a href="#architettura">Com'è fatto</a>
+      <a href="#sicurezza">Sicurezza</a>
+      <a href="#build">Build</a>
+      <a class="gh" href="https://github.com/nicomil/maccleaner">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<section class="hero">
+  <div class="wrap">
+    <img class="icon" src="assets/icon.png" alt="Icona di MacCleaner">
+    <h1>Il Mac pulito, senza abbonamento.</h1>
+    <p class="lead">MacCleaner è un'app macOS personale, scritta in Swift 6 e SwiftUI, che replica le funzioni di CleanMyMac 5: pulizia, spazio, applicazioni, protezione e velocità. Ogni operazione parte da un clic, si vede prima di essere eseguita e finisce nel log.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/nicomil/maccleaner">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.7 5.5.7 11.8c0 5 3.2 9.2 7.7 10.7.6.1.8-.2.8-.5v-2c-3.1.7-3.8-1.3-3.8-1.3-.5-1.3-1.2-1.7-1.2-1.7-1-.7.1-.7.1-.7 1.1.1 1.7 1.2 1.7 1.2 1 1.7 2.6 1.2 3.3.9.1-.7.4-1.2.7-1.5-2.5-.3-5.1-1.3-5.1-5.6 0-1.2.4-2.2 1.2-3-.1-.3-.5-1.5.1-3 0 0 1-.3 3.1 1.2a10.7 10.7 0 0 1 5.7 0c2.1-1.5 3.1-1.2 3.1-1.2.6 1.5.2 2.7.1 3 .8.8 1.2 1.8 1.2 3 0 4.3-2.6 5.3-5.1 5.6.4.4.8 1.1.8 2.1v3.1c0 .3.2.6.8.5 4.5-1.5 7.7-5.7 7.7-10.7C23.3 5.5 18.3.5 12 .5z"/></svg>
+        Codice su GitHub
+      </a>
+      <a class="btn" href="#build">Compila e installa</a>
+    </div>
+    <div class="shot">
+      <a href="shots/01-smart-care.png" data-lb><img src="shots/01-smart-care.png" alt="MacCleaner, schermata Smart Care: pulizia, protezione, aggiornamenti, prestazioni e spazio riassunti in cinque schede"></a>
+    </div>
+    <div class="stats">
+      <div class="stat"><b>16</b><span>moduli nella barra laterale</span></div>
+      <div class="stat"><b>14</b><span>controlli di Protezione</span></div>
+      <div class="stat"><b>140</b><span>test automatici</span></div>
+      <div class="stat"><b>~10k</b><span>righe di Swift</span></div>
+      <div class="stat"><b>0</b><span>telemetria, abbonamenti, demoni</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="funzioni">
+  <div class="wrap">
+    <div class="kicker">Funzioni</div>
+    <h2>Tutto quello che fa CleanMyMac, modulo per modulo.</h2>
+    <p class="sub">La barra laterale segue le stesse aree di CleanMyMac 5. Ogni modulo produce un elenco di categorie e voci con dimensione, rischio e preselezione; l'interfaccia è la stessa per tutti.</p>
+
+    <div class="feature">
+      <div class="text">
+        <h3>Pulizia sistema</h3>
+        <p>Cache utente e di sistema, cache delle app e degli strumenti di sviluppo, log, file di Xcode: ciò che macOS e le app ricreano da sole.</p>
+        <ul>
+          <li><b>Esclusioni intelligenti</b>: le cache delle app aperte restano, anche dentro il loro container.</li>
+          <li><b>Rischio alto mai preselezionato</b>: cache e log di sistema si attivano a mano.</li>
+          <li><b>Seleziona tutto, filtro, scansiona di nuovo</b> in ogni elenco.</li>
+        </ul>
+      </div>
+      <div class="shot"><a href="shots/02-pulizia-sistema.png" data-lb><img src="shots/02-pulizia-sistema.png" alt="Pulizia sistema con 7 gruppi di cache e log"></a></div>
+    </div>
+
+    <div class="feature flip">
+      <div class="text">
+        <h3>Space Lens</h3>
+        <p>La mappa del disco cartella per cartella, come treemap e come elenco. Doppio clic per entrare, selezione multipla, rimozione diretta nel Cestino.</p>
+        <ul>
+          <li><b>Cartella Inizio o qualunque cartella</b> a scelta.</li>
+          <li><b>Seleziona tutto / Deseleziona tutto</b> sull'elenco di destra.</li>
+          <li>Completano l'area Spazio: <b>File grandi e vecchi</b>, <b>Duplicati</b>, <b>Immagini simili</b>.</li>
+        </ul>
+      </div>
+      <div class="shot"><a href="shots/03-space-lens.png" data-lb><img src="shots/03-space-lens.png" alt="Space Lens: treemap della cartella Inizio, 226 GB in 1,9 milioni di file"></a></div>
+    </div>
+
+    <div class="feature">
+      <div class="text">
+        <h3>Disinstallazione</h3>
+        <p>Scegli un'app e vedi tutto ciò che ha sparso nel sistema: bundle, Application Support, Containers, preferenze, cache, launch agent.</p>
+        <ul>
+          <li><b>Il bundle è sempre preselezionato</b>, i dati utente mai.</li>
+          <li><b>App di root</b> (per esempio Slack in /Applications): rimosse con la password tramite l'helper privilegiato.</li>
+          <li>Elenco ridimensionabile, ordinamento per dimensione, nome o ultimo uso.</li>
+        </ul>
+      </div>
+      <div class="shot"><a href="shots/04-disinstallazione.png" data-lb><img src="shots/04-disinstallazione.png" alt="Disinstallazione: Visual Studio Code con i suoi 5 elementi e 958 MB selezionati"></a></div>
+    </div>
+
+    <div class="feature flip">
+      <div class="text">
+        <h3>Aggiornamenti e avanzi</h3>
+        <p>App Store, Sparkle e Homebrew in una sola lista. Quando aggiorni un'app, la voce sparisce da sola: l'elenco rilegge le versioni installate ogni volta che torni in primo piano.</p>
+        <ul>
+          <li><b>Niente falsi positivi</b>: le voci dello Store che richiedono un macOS più recente e i cask già aggiornati dall'app stessa non compaiono.</li>
+          <li><b>Avanzi di app rimosse</b>: cartelle che nessuna app, helper, processo o servizio launchd reclama più, con l'età dell'ultima modifica.</li>
+        </ul>
+      </div>
+      <div class="shot"><a href="shots/05-aggiornamenti.png" data-lb><img src="shots/05-aggiornamenti.png" alt="Aggiornamenti disponibili da App Store, Sparkle e Homebrew"></a></div>
+    </div>
+
+    <div class="feature">
+      <div class="text">
+        <h3>Prestazioni, con i numeri veri</h3>
+        <p>Libera la RAM, elimina le istantanee locali di Time Machine, svuota la cache DNS, reindicizza Spotlight, ripara i permessi, velocizza Mail.</p>
+        <ul>
+          <li><b>Ogni scheda dice cosa è cambiato</b>: "File in cache: 3,1 GB → 0,4 GB · liberati 2,7 GB".</li>
+          <li><b>Errori con il motivo</b>, non un generico "non riuscito".</li>
+          <li>Se non c'è niente da fare, lo dice prima di chiedere la password.</li>
+        </ul>
+      </div>
+      <div class="shot"><a href="shots/10-prestazioni.png" data-lb><img src="shots/10-prestazioni.png" alt="Prestazioni: schede di manutenzione con l'esito misurato"></a></div>
+    </div>
+
+    <div class="feature flip">
+      <div class="text">
+        <h3>Smart Care</h3>
+        <p>Una scansione che tocca pulizia, protezione, aggiornamenti e prestazioni e riassume tutto in una schermata. Niente viene rimosso senza conferma.</p>
+        <ul>
+          <li>Monitor nella barra dei menu e scansioni pianificate.</li>
+          <li>Modalità predefinita a scelta: Cestino, eliminazione, prova.</li>
+        </ul>
+      </div>
+      <div class="shot"><a href="shots/01-smart-care.png" data-lb><img src="shots/01-smart-care.png" alt="Smart Care: riepilogo di pulizia, protezione, aggiornamenti, prestazioni e spazio"></a></div>
+    </div>
+  </div>
+</section>
+
+<section id="protezione">
+  <div class="wrap">
+    <div class="kicker">Protezione</div>
+    <h2>Quattordici controlli, zero download.</h2>
+    <p class="sub">La scansione standard non chiede mai la password. I risultati sono filtrabili per gravità e categoria, con ricerca e vista "solo nuovi". I file sospetti finiscono in quarantena, con ripristino.</p>
+    <div class="shot" style="margin-bottom:28px"><a href="shots/07-protezione.png" data-lb><img src="shots/07-protezione.png" alt="Protezione: risultati a due colonne con filtri per gravità e categoria"></a></div>
+    <div class="grid">
+      <div class="card"><div class="ic">⏻</div><h4>Avvio e persistenza</h4><p>Elementi di login, launch agent e daemon, cron e file di shell, profili di configurazione.</p></div>
+      <div class="card"><div class="ic">🧩</div><h4>Estensioni</h4><p>Estensioni di sistema e kernel, estensioni dei browser con l'origine presa dalle preferenze del profilo, dirottamento del browser.</p></div>
+      <div class="card"><div class="ic">🌐</div><h4>Rete e fiducia</h4><p>Configurazione di rete, certificati radice, permessi TCC, firme delle app, installazioni recenti.</p></div>
+      <div class="card"><div class="ic">🛡</div><h4>Difese del sistema</h4><p>XProtect e postura di sicurezza: SIP, Gatekeeper, FileVault, firewall, aggiornamenti automatici.</p></div>
+      <div class="card"><div class="ic">Y</div><h4>YARA e liste di hash</h4><p>libyara compilata nel pacchetto. Le regole le aggiungi tu dalle Impostazioni, con lo SHA-256 da confrontare: l'app non scarica nulla.</p></div>
+      <div class="card"><div class="ic">⌁</div><h4>Attività e Privacy</h4><p>Processi per CPU, memoria, energia e rete. Cronologia, cookie, elementi recenti, reti Wi-Fi, permessi: con copia di sicurezza prima di cancellare.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="architettura">
+  <div class="wrap">
+    <div class="kicker">Com'è fatto</div>
+    <h2>Un core piccolo, un modulo per funzione, un solo eseguibile che tocca il sistema.</h2>
+    <p class="sub">Swift Package con tre librerie e due eseguibili, più l'app SwiftUI. Nessuna dipendenza esterna oltre a libyara.</p>
+    <div class="arch">
+      <div class="box app"><code>MacCleaner.app</code><span>SwiftUI, macOS 14+, Swift 6 con strict concurrency. Barra laterale, elenchi, Smart Care, barra dei menu, impostazioni.</span></div>
+      <div class="box"><code>MacCleanerCore</code><span>RuleEngine, SafeRemover, PinnedFileSystem, log delle operazioni, modelli di scansione.</span></div>
+      <div class="box"><code>MacCleanerModules</code><span>Un tipo per modulo (pulizia, cestini, Space Lens, duplicati, disinstallazione, aggiornamenti, protezione, privacy, prestazioni…).</span></div>
+      <div class="box"><code>CYara</code><span>libyara 4.5.4 senza OpenSSL e senza scansione dei processi.</span></div>
+      <div class="box root"><code>mchelper</code><span>L'unico codice che tocca i file di sistema come root. Copiato in una cartella di sola proprietà di root, verificato con SHA-256, poi eseguito.</span></div>
+      <div class="box"><code>mccli</code><span>Le stesse scansioni da Terminale, in sola lettura.</span></div>
+    </div>
+    <p class="sub" style="margin-top:28px">Le specifiche funzionali vengono da uno studio di CleanMyMac 5.7.2 (analisi statica con rea e Ghidra, cattura dinamica con <code>fs_usage</code>) e non contengono codice, testi o asset di MacPaw: le regole sono riscritte da zero sulla conoscenza pubblica di macOS. L'ultimo ciclo di lavoro è documentato con il metodo BMAD in <a href="https://github.com/nicomil/maccleaner/tree/main/docs/bmad"><code>docs/bmad/</code></a>: brief, PRD, architettura, storie e QA.</p>
+  </div>
+</section>
+
+<section id="sicurezza">
+  <div class="wrap">
+    <div class="kicker">Sicurezza</div>
+    <h2>Progettato per non perdere niente.</h2>
+    <p class="sub">Un'app che cancella file deve sbagliare dalla parte giusta. Queste regole valgono in tutti i moduli.</p>
+    <div class="sec">
+      <div class="card"><h4>Cestino di default</h4><p>I file vanno nel Cestino; c'è una modalità "Prova" che non rimuove nulla. Nel Cestino un elemento esistente non viene mai sostituito.</p></div>
+      <div class="card"><h4>Cartelle consentite</h4><p>SafeRemover rimuove solo dentro un elenco di cartelle, risolve i symlink prima del controllo e rifiuta i file protetti da SIP.</p></div>
+      <div class="card"><h4>Operazioni chiuse</h4><p>Le azioni da amministratore sono un elenco fisso. L'helper lavora relativamente a descrittori aperti da /: uno scambio di cartelle durante la richiesta della password fa fallire l'operazione.</p></div>
+      <div class="card"><h4>Tutto è dato, niente è codice</h4><p>Plist, manifest, script, output dei comandi e regole YARA vengono parsati con limiti di dimensione e mai eseguiti.</p></div>
+      <div class="card"><h4>Copia prima di cancellare</h4><p>I database dei browser sono copiati con SQLite (VACUUM INTO) e riletti prima di toccare l'originale. I duplicati sono ricontrollati prima della pulizia.</p></div>
+      <div class="card"><h4>Log di ogni operazione</h4><p>Riuscite o rifiutate, tutte le operazioni finiscono in <code>~/Library/Logs/MacCleaner/operations.log</code>.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="build">
+  <div class="wrap">
+    <div class="kicker">Build</div>
+    <h2>Compila e installa in tre comandi.</h2>
+    <p class="sub">Servono Xcode e XcodeGen (<code>brew install xcodegen</code>). La firma è ad-hoc, per uso personale: dopo l'installazione concedi l'Accesso completo al disco in Impostazioni di Sistema → Privacy e sicurezza.</p>
+<pre><code>git clone https://github.com/nicomil/maccleaner.git &amp;&amp; cd maccleaner
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+
+xcodegen generate
+xcodebuild -project MacCleaner.xcodeproj -scheme MacCleaner \
+  -configuration Release -derivedDataPath build/DerivedData build
+ditto build/DerivedData/Build/Products/Release/MacCleaner.app /Applications/MacCleaner.app
+
+# test della logica (129 test; altri 11 nel target MacCleanerTests)
+(cd Packages/MacCleanerKit &amp;&amp; swift test)</code></pre>
+  </div>
+</section>
+
+<section id="galleria">
+  <div class="wrap">
+    <div class="kicker">Galleria</div>
+    <h2>Le altre schermate.</h2>
+    <div class="gallery">
+      <figure><a href="shots/06-avanzi.png" data-lb><img src="shots/06-avanzi.png" alt="Avanzi di app rimosse"></a><figcaption>Avanzi di app rimosse, con l'età dell'ultima modifica e il rischio.</figcaption></figure>
+      <figure><a href="shots/08-attivita.png" data-lb><img src="shots/08-attivita.png" alt="Attività"></a><figcaption>Attività: processi per CPU, memoria, energia e rete.</figcaption></figure>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>MacCleaner · progetto a uso personale di Nicola Milella</span>
+    <span>Swift 6 · SwiftUI · macOS 14+ · libyara BSD-3</span>
+    <a href="https://github.com/nicomil/maccleaner">github.com/nicomil/maccleaner</a>
+  </div>
+</footer>
+
+<dialog class="lb" id="lb"><img alt=""></dialog>
+<script>
+(function () {
+  var lb = document.getElementById('lb'), img = lb.querySelector('img');
+  if (!lb.showModal) return;
+  document.querySelectorAll('a[data-lb]').forEach(function (a) {
+    a.addEventListener('click', function (e) {
+      e.preventDefault();
+      img.src = a.getAttribute('href');
+      img.alt = a.querySelector('img') ? a.querySelector('img').alt : '';
+      lb.showModal();
+    });
+  });
+  lb.addEventListener('click', function () { lb.close(); });
+})();
+</script>
+</body>
+</html>

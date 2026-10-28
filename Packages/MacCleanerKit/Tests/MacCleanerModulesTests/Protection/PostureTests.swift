@@ -108,12 +108,22 @@ import Testing
         2026-10-21 06:14:55.946 Df XProtectRemediatorAdload[20250:3e3aa3] [com.apple.XProtectFramework.PluginAPI:default] {"caused_by":[],"status_message":"Detected and remediated","execution_duration":3.4,"module":"XProtectRemediatorAdload","status_code":20,"type":"XPEvent.structured","subject":"/Users/papa/Library/Application Support/.x/agent"}
         2026-10-21 06:15:00.000 Df XProtectRemediatorAdload[20250:3e3aa3] [com.apple.launchservices:default] noise
         2026-10-22 21:42:01.958 F  XProtectRemediatorColdSnap[19585:8d588] [com.apple.XProtectFramework.PluginAPI:XPAPIHelpers] XPC connection interrupted.
+        2026-10-28 15:36:47.154 Df XProtectRemediatorEicar[68599:86214] [com.apple.XProtectFramework.PluginAPI:XPEvent.structured] {"status_code":20,"caused_by":[],"status_message":"NoThreatDetected","execution_duration":0.0001779794692993164}
         """
         let (runs, detections) = XProtectCheck.parseRemediatorLog(log)
-        #expect(runs == 3)
-        #expect(detections.count == 1)
+        #expect(runs == 4)
+        #expect(detections.count == 1) // status_code 20 with "NoThreatDetected" is a clean run, not a detection
         #expect(detections.first?.module == "Adload")
         #expect(detections.first?.subject == "/Users/papa/Library/Application Support/.x/agent")
+    }
+
+    @Test func remediatorModuleComesFromTheProcessNameWhenTheEventLacksIt() {
+        let log = """
+        2026-10-28 15:36:47.154 Df XProtectRemediatorEicar[68599:86214] [com.apple.XProtectFramework.PluginAPI:XPEvent.structured] {"status_code":21,"caused_by":[],"status_message":"ThreatDetectedAndRemediated","execution_duration":0.1}
+        """
+        let (_, detections) = XProtectCheck.parseRemediatorLog(log)
+        #expect(detections.count == 1)
+        #expect(detections.first?.module == "Eicar")
     }
 
     @Test func adminOperationUpdatesDefinitions() throws {

@@ -153,6 +153,15 @@ import Testing
         #expect(latest.isStillPending(for: app(version: "2.0", build: "1"))) // not comparable: trust brew
     }
 
+    @Test func versionLineShowsBuildsWhenMarketingVersionsMatch() {
+        let rebuild = AppUpdate(app: app(version: "0.65.2", build: "111"), availableVersion: "0.65.2", availableBuild: "113",
+                                source: .sparkle, infoURL: nil, caskToken: nil)
+        #expect(rebuild.versionLine == "0.65.2 (111) → 0.65.2 (113)")
+        let normal = AppUpdate(app: app(version: "1.0", build: "100"), availableVersion: "1.1", availableBuild: "110",
+                               source: .sparkle, infoURL: nil, caskToken: nil)
+        #expect(normal.versionLine == "1.0 → 1.1")
+    }
+
     @Test func storeLookupSkipsUnsupportedSystems() {
         let entry = UpdateChecker.StoreEntry(version: "5.0", page: nil, minimumOSVersion: "15.0")
         #expect(!entry.isInstallable(on: "14.6.1"))

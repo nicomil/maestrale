@@ -49,7 +49,7 @@ struct UpdatesView: View {
             Image(nsImage: NSWorkspace.shared.icon(forFile: update.app.url.path)).resizable().frame(width: 32, height: 32)
             VStack(alignment: .leading, spacing: 2) {
                 Text(update.app.name).bold()
-                Text("\(update.app.version) → \(update.availableVersion)").font(.callout).foregroundStyle(.secondary)
+                Text(update.versionLine).font(.callout).foregroundStyle(.secondary)
                 if let message = updates.messages[update.id] {
                     Text(message).font(.caption).foregroundStyle(.secondary)
                 }
